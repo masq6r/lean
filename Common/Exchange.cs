@@ -29,6 +29,21 @@ namespace QuantConnect
         /// </summary>
         public static Exchange UNKNOWN { get; } = new (string.Empty, string.Empty, "UNKNOWN", string.Empty);
 
+        public static Exchange SHFE { get; }
+            = new("SHFE", "SHFE", "上海期货交易所", "shfe", SecurityType.Future);
+
+        public static Exchange INE { get; }
+            = new("INE", "INE", "上海国际能源交易中心", "ine", SecurityType.Future);
+
+        public static Exchange CZCE { get; }
+            = new("CZCE", "CZCE", "上海期货交易所", "czce", SecurityType.Future);
+
+        public static Exchange DCE { get; }
+            = new("DCE", "DCE", "上海期货交易所", "dce", SecurityType.Future);
+
+        public static Exchange CFFEX { get; }
+            = new("CFFEX", "CFFEX", "上海期货交易所", "cffex", SecurityType.Future);
+
         /// <summary>
         /// National Association of Securities Dealers Automated Quotation.
         /// </summary>

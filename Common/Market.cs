@@ -65,7 +65,17 @@ namespace QuantConnect
             Tuple.Create(CFE, 33),
             Tuple.Create(FTX, 34),
             Tuple.Create(FTXUS, 35),
-            Tuple.Create(BinanceUS, 36)
+            Tuple.Create(BinanceUS, 36),
+
+            // China futures market.
+            Tuple.Create(SHFE, 555),
+            Tuple.Create(INE, 556),
+            Tuple.Create(CFFEX, 557),
+            Tuple.Create(DCE, 558),
+            Tuple.Create(CZCE, 559),
+            Tuple.Create(SSE, 600),
+            Tuple.Create(SZSE, 601),
+            Tuple.Create(BSE, 602)
         };
 
         static Market()
@@ -77,6 +87,46 @@ namespace QuantConnect
                 ReverseMarkets[market.Item2] = market.Item1;
             }
         }
+
+        /// <summary>
+        /// China futures market - SHFE
+        /// </summary>
+        public const string SHFE = "shfe";
+
+        /// <summary>
+        /// China futures market - INE
+        /// </summary>
+        public const string INE = "ine";
+
+        /// <summary>
+        /// China futures market - CFFEX
+        /// </summary>
+        public const string CFFEX = "cffex";
+        
+        /// <summary>
+        /// China futures market - DCE
+        /// </summary>
+        public const string DCE = "dce";
+
+        /// <summary>
+        /// China futures market - CZCE
+        /// </summary>
+        public const string CZCE = "czce";
+
+        /// <summary>
+        /// China stock market - SSE
+        /// </summary>
+        public const string SSE = "sse";
+
+        /// <summary>
+        /// China stock market - SZSE
+        /// </summary>
+        public const string SZSE = "szse";
+
+        /// <summary>
+        /// China stock market - BSE
+        /// </summary>
+        public const string BSE = "bse";
 
         /// <summary>
         /// USA Market

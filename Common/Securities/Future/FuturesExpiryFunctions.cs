@@ -30,6 +30,11 @@ namespace QuantConnect.Securities.Future
         public static Func<DateTime, DateTime> FuturesExpiryFunction(Symbol symbol)
         {
             Func<DateTime, DateTime> result;
+            // For China futures market only.
+            if(symbol.ID.Symbol.StartsWith("CHN"))
+            {
+                return (time => new DateTime(time.Year, time.Month, 1));
+            }
             if (FuturesExpiryDictionary.TryGetValue(symbol.Canonical, out result))
             {
                 return result;

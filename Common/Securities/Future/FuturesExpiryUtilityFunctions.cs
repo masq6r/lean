@@ -421,5 +421,40 @@ namespace QuantConnect.Securities.Future
             { Futures.Softs.Sugar11, 1 },
             { Futures.Softs.Sugar11CME, 1 }
         };
+
+        // For China futures market.
+        // Not used in practice.
+        private static Dictionary<string, Dictionary<DateTime, int>> ExpiryDict;
+
+        // Load China futures contract dates.
+        // Not used in practice. The file saves the actual expiry date for each contract,
+        // but some contracts (of a certain underlying) have the same expiry date,
+        // which results in one expiry date to many contracts. LEAN could not resolve such case.
+        // See WR.SHFE - WR1810/WR1811/WR1812/WR1901/WR1902 have the same expiry date 2018/8/31.
+        private static void LoadExpiryFromFile()
+        {
+            ExpiryDict = new Dictionary<string, Dictionary<DateTime, int>>();
+            var dataFolder = Configuration.Config.Get("data-folder");
+            var path = System.IO.Path.Combine(dataFolder, "symbol-properties", "contract-database.csv");
+            var lines = System.IO.File.ReadAllLines(path).Where(line => !String.IsNullOrEmpty(line)).ToList();
+            foreach (var line in lines)
+            {
+                var parts = line.Split(',');
+                var underlying = parts[1].ToUpper();
+                var year = Parse.Int(parts[3]);
+                var month = Parse.Int(parts[4]);
+                var expiry = Parse.DateTimeExact(parts[6], "MM/dd/yyyy");
+                var delta = ((expiry.Year - year) * 12) + expiry.Month - month;
+                if (ExpiryDict.ContainsKey(underlying))
+                {
+                    ExpiryDict[underlying].Add(expiry, delta) ;
+                } else
+                {
+                    var pair = new Dictionary<DateTime, int>();
+                    pair.Add(expiry, delta);
+                    ExpiryDict.Add(underlying, pair) ;
+                }
+            }
+        }
     }
 }

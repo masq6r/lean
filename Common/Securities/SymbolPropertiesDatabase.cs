@@ -37,7 +37,7 @@ namespace QuantConnect.Securities
         /// Initialize a new instance of <see cref="SymbolPropertiesDatabase"/> using the given file
         /// </summary>
         /// <param name="file">File to read from</param>
-        protected SymbolPropertiesDatabase(string file)
+        public SymbolPropertiesDatabase(string file)
         {
             var allEntries = new Dictionary<SecurityDatabaseKey, SymbolProperties>();
             var entriesBySecurityType = new Dictionary<SecurityDatabaseKey, SecurityDatabaseKey>();

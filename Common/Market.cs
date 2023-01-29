@@ -129,6 +129,11 @@ namespace QuantConnect
         public const string BSE = "bse";
 
         /// <summary>
+        /// China futures market - CZCE
+        /// </summary>
+        public const string GFEX = "gfex";
+        
+        /// <summary>
         /// USA Market
         /// </summary>
         public const string USA = "usa";

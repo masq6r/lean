@@ -36,13 +36,16 @@ namespace QuantConnect
             = new("INE", "INE", "上海国际能源交易中心", "ine", SecurityType.Future);
 
         public static Exchange CZCE { get; }
-            = new("CZCE", "CZCE", "上海期货交易所", "czce", SecurityType.Future);
+            = new("CZCE", "CZCE", "郑州期货交易所", "czce", SecurityType.Future);
 
         public static Exchange DCE { get; }
-            = new("DCE", "DCE", "上海期货交易所", "dce", SecurityType.Future);
+            = new("DCE", "DCE", "大连期货交易所", "dce", SecurityType.Future);
 
         public static Exchange CFFEX { get; }
-            = new("CFFEX", "CFFEX", "上海期货交易所", "cffex", SecurityType.Future);
+            = new("CFFEX", "CFFEX", "中国金融期货交易所", "cffex", SecurityType.Future);
+
+        public static Exchange GFEX { get; }
+            = new("CFFEX", "CFFEX", "广州期货交易所", "gfex", SecurityType.Future);
 
         /// <summary>
         /// National Association of Securities Dealers Automated Quotation.

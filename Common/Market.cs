@@ -75,7 +75,8 @@ namespace QuantConnect
             Tuple.Create(CZCE, 559),
             Tuple.Create(SSE, 600),
             Tuple.Create(SZSE, 601),
-            Tuple.Create(BSE, 602)
+            Tuple.Create(BSE, 602),
+            Tuple.Create(GFEX, 603)
         };
 
         static Market()

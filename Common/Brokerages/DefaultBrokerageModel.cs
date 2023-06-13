@@ -24,11 +24,11 @@ using QuantConnect.Orders.Fees;
 using QuantConnect.Orders.Fills;
 using QuantConnect.Orders.Slippage;
 using QuantConnect.Securities;
+using QuantConnect.Securities.CryptoFuture;
 using QuantConnect.Securities.Equity;
 using QuantConnect.Securities.Future;
 using QuantConnect.Securities.Option;
 using QuantConnect.Util;
-using static QuantConnect.StringExtensions;
 
 namespace QuantConnect.Brokerages
 {
@@ -51,6 +51,7 @@ namespace QuantConnect.Brokerages
             {SecurityType.Forex, Market.Oanda},
             {SecurityType.Cfd, Market.Oanda},
             {SecurityType.Crypto, Market.GDAX},
+            {SecurityType.CryptoFuture, Market.Binance},
             {SecurityType.Index, Market.USA},
             {SecurityType.IndexOption, Market.USA}
         }.ToReadOnlyDictionary();
@@ -115,6 +116,13 @@ namespace QuantConnect.Brokerages
         /// <returns>True if the brokerage could process the order, false otherwise</returns>
         public virtual bool CanSubmitOrder(Security security, Order order, out BrokerageMessageEvent message)
         {
+            if ((security.Type == SecurityType.Future || security.Type == SecurityType.FutureOption) && order.Type == OrderType.MarketOnOpen)
+            {
+                message = new BrokerageMessageEvent(BrokerageMessageType.Warning, "NotSupported",
+                    Messages.DefaultBrokerageModel.UnsupportedMarketOnOpenOrdersForFuturesAndFutureOptions);
+                return false;
+            }
+
             message = null;
             return true;
         }
@@ -164,7 +172,8 @@ namespace QuantConnect.Brokerages
             {
                 Quantity = (int?) (ticket.Quantity/splitFactor),
                 LimitPrice = ticket.OrderType.IsLimitOrder() ? ticket.Get(OrderField.LimitPrice)*splitFactor : (decimal?) null,
-                StopPrice = ticket.OrderType.IsStopOrder() ? ticket.Get(OrderField.StopPrice)*splitFactor : (decimal?) null
+                StopPrice = ticket.OrderType.IsStopOrder() ? ticket.Get(OrderField.StopPrice)*splitFactor : (decimal?) null,
+                TriggerPrice = ticket.OrderType == OrderType.LimitIfTouched ? ticket.Get(OrderField.TriggerPrice) * splitFactor : (decimal?) null
             }));
         }
 
@@ -182,6 +191,9 @@ namespace QuantConnect.Brokerages
 
             switch (security.Type)
             {
+                case SecurityType.CryptoFuture:
+                    return 25m;
+
                 case SecurityType.Equity:
                     return 2m;
 
@@ -224,33 +236,25 @@ namespace QuantConnect.Brokerages
         {
             switch (security.Type)
             {
-                case SecurityType.Base:
-                    break;
                 case SecurityType.Equity:
                     return new EquityFillModel();
-                case SecurityType.Option:
-                    break;
                 case SecurityType.FutureOption:
-                    break;
-                case SecurityType.Commodity:
-                    break;
-                case SecurityType.Forex:
-                    break;
+                    return new FutureOptionFillModel();
                 case SecurityType.Future:
-                    break;
+                    return new FutureFillModel();
+                case SecurityType.Base:
+                case SecurityType.Option:
+                case SecurityType.Commodity:
+                case SecurityType.Forex:
                 case SecurityType.Cfd:
-                    break;
                 case SecurityType.Crypto:
-                    break;
+                case SecurityType.CryptoFuture:
                 case SecurityType.Index:
-                    break;
                 case SecurityType.IndexOption:
-                    break;
+                    return new ImmediateFillModel();
                 default:
-                    throw new ArgumentOutOfRangeException($"{GetType().Name}.GetFillModel: Invalid security type {security.Type}");
+                    throw new ArgumentOutOfRangeException(Messages.DefaultBrokerageModel.InvalidSecurityTypeToGetFillModel(this, security));
             }
-
-            return new ImmediateFillModel();
         }
 
         /// <summary>
@@ -266,6 +270,7 @@ namespace QuantConnect.Brokerages
                 case SecurityType.Forex:
                 case SecurityType.Cfd:
                 case SecurityType.Crypto:
+                case SecurityType.CryptoFuture:
                 case SecurityType.Index:
                     return new ConstantFeeModel(0m);
 
@@ -298,6 +303,7 @@ namespace QuantConnect.Brokerages
                 case SecurityType.Forex:
                 case SecurityType.Cfd:
                 case SecurityType.Crypto:
+                case SecurityType.CryptoFuture:
                     return new ConstantSlippageModel(0);
 
                 case SecurityType.Commodity:
@@ -328,6 +334,11 @@ namespace QuantConnect.Brokerages
                 }
             }
 
+            if(security.Symbol.SecurityType == SecurityType.Future)
+            {
+                return new FutureSettlementModel();
+            }
+
             return new ImmediateSettlementModel();
         }
 
@@ -351,15 +362,21 @@ namespace QuantConnect.Brokerages
         /// <returns>The buying power model for this brokerage/security</returns>
         public virtual IBuyingPowerModel GetBuyingPowerModel(Security security)
         {
-            return security.Type switch
+            IBuyingPowerModel getCurrencyBuyingPowerModel() =>
+                AccountType == AccountType.Cash
+                    ? new CashBuyingPowerModel()
+                    : new SecurityMarginModel(GetLeverage(security), RequiredFreeBuyingPowerPercent);
+
+            return security?.Type switch
             {
+                SecurityType.Crypto => getCurrencyBuyingPowerModel(),
+                SecurityType.Forex => getCurrencyBuyingPowerModel(),
+                SecurityType.CryptoFuture => new CryptoFutureMarginModel(GetLeverage(security)),
                 SecurityType.Future => new FutureMarginModel(RequiredFreeBuyingPowerPercent, security),
                 SecurityType.FutureOption => new FuturesOptionsMarginModel(RequiredFreeBuyingPowerPercent, (Option)security),
                 SecurityType.IndexOption => new OptionMarginModel(RequiredFreeBuyingPowerPercent),
                 SecurityType.Option => new OptionMarginModel(RequiredFreeBuyingPowerPercent),
-                _ => AccountType == AccountType.Cash
-                    ? new CashBuyingPowerModel()
-                    : new SecurityMarginModel(GetLeverage(security), RequiredFreeBuyingPowerPercent)
+                _ => new SecurityMarginModel(GetLeverage(security), RequiredFreeBuyingPowerPercent)
             };
         }
 
@@ -370,6 +387,16 @@ namespace QuantConnect.Brokerages
         public virtual IShortableProvider GetShortableProvider()
         {
             return ShortableProvider;
+        }
+
+        /// <summary>
+        /// Gets a new margin interest rate model for the security
+        /// </summary>
+        /// <param name="security">The security to get a margin interest rate model for</param>
+        /// <returns>The margin interest rate model for this brokerage</returns>
+        public virtual IMarginInterestRateModel GetMarginInterestRateModel(Security security)
+        {
+            return MarginInterestRateModel.Null;
         }
 
         /// <summary>
@@ -394,11 +421,10 @@ namespace QuantConnect.Brokerages
         public static bool IsValidOrderSize(Security security, decimal orderQuantity, out BrokerageMessageEvent message)
         {
             var minimumOrderSize = security.SymbolProperties.MinimumOrderSize;
-            if ( minimumOrderSize != null && Math.Abs(orderQuantity) < minimumOrderSize)
+            if (minimumOrderSize != null && Math.Abs(orderQuantity) < minimumOrderSize)
             {
                 message = new BrokerageMessageEvent(BrokerageMessageType.Warning, "NotSupported",
-                    Invariant($"The minimum order quantity for {security.Symbol.Value} is {minimumOrderSize}. Order quantity was {orderQuantity}")
-                );
+                    Messages.DefaultBrokerageModel.InvalidOrderQuantity(security, orderQuantity));
 
                 return false;
             }

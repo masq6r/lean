@@ -1,4 +1,4 @@
-﻿# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
+# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
 # Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,7 +28,7 @@ class ImmediateExecutionModel(ExecutionModel):
 
         # for performance we check count value, OrderByMarginImpact and ClearFulfilled are expensive to call
         self.targetsCollection.AddRange(targets)
-        if self.targetsCollection.Count > 0:
+        if not self.targetsCollection.IsEmpty:
             for target in self.targetsCollection.OrderByMarginImpact(algorithm):
                 security = algorithm.Securities[target.Symbol]
                 # calculate remaining quantity to be ordered
@@ -37,5 +37,8 @@ class ImmediateExecutionModel(ExecutionModel):
                     aboveMinimumPortfolio = BuyingPowerModelExtensions.AboveMinimumOrderMarginPortfolioPercentage(security.BuyingPowerModel, security, quantity, algorithm.Portfolio, algorithm.Settings.MinimumOrderMarginPortfolioPercentage)
                     if aboveMinimumPortfolio:
                         algorithm.MarketOrder(security, quantity)
+                    elif not PortfolioTarget.MinimumOrderMarginPercentageWarningSent:
+                        # will trigger the warning if it has not already been sent
+                        PortfolioTarget.MinimumOrderMarginPercentageWarningSent = False
 
             self.targetsCollection.ClearFulfilled(algorithm)

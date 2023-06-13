@@ -31,6 +31,11 @@ namespace QuantConnect.Tests.Python
         [Test, TestCaseSource(nameof(TestDataFrameNonExceptionFunctions))]
         public void BackwardsCompatibilityDataFrameDataFrameNonExceptionFunctions(string method, string index, bool cache)
         {
+            if(method == ".to_orc()" && OS.IsWindows)
+            {
+                // not supported in windows
+                return;
+            }
             if (cache) SymbolCache.Set("SPY", Symbols.SPY);
 
             using (Py.GIL())
@@ -313,7 +318,7 @@ skipped = [ 'boxplot', 'hist', 'plot',        # <- Graphics
     'equals', 'ewm', 'fillna', 'filter', 'groupby', 'join', 'mask', 'melt',
     'pivot', 'pivot_table', 'reindex_like', 'rename', 'reset_index', 'select_dtypes',
     'slice_shift', 'swaplevel', 'to_clipboard', 'to_excel', 'to_feather', 'to_gbq',
-    'to_hdf', 'to_list', 'tolist', 'to_parquet', 'to_period', 'to_pickle', 'to_sql',
+    'to_hdf', 'to_list', 'tolist', 'to_parquet', 'to_period', 'to_pickle', 'to_sql', 'to_xml',
     'to_stata', 'to_timestamp', 'to_xarray', 'tshift', 'update', 'value_counts', 'where']
 
 newPandas = int(pandas.__version__.split('.')[0]) >= 1

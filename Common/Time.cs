@@ -16,6 +16,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using Newtonsoft.Json.Converters;
 using NodaTime;
 using QuantConnect.Logging;
 using QuantConnect.Securities;
@@ -140,6 +141,30 @@ namespace QuantConnect
         private const long SecondToMillisecond = 1000;
 
         /// <summary>
+        /// Helper method to get the new live auxiliary data due time
+        /// </summary>
+        /// <returns>The due time for the new auxiliary data emission</returns>
+        public static TimeSpan GetNextLiveAuxiliaryDataDueTime()
+        {
+            return GetNextLiveAuxiliaryDataDueTime(DateTime.UtcNow);
+        }
+
+        /// <summary>
+        /// Helper method to get the new live auxiliary data due time
+        /// </summary>
+        /// <param name="utcNow">The current utc time</param>
+        /// <returns>The due time for the new auxiliary data emission</returns>
+        public static TimeSpan GetNextLiveAuxiliaryDataDueTime(DateTime utcNow)
+        {
+            var nowNewYork = utcNow.ConvertFromUtc(TimeZones.NewYork);
+            if (nowNewYork.TimeOfDay < LiveAuxiliaryDataOffset)
+            {
+                return LiveAuxiliaryDataOffset - nowNewYork.TimeOfDay;
+            }
+            return nowNewYork.Date.AddDays(1).Add(+LiveAuxiliaryDataOffset) - nowNewYork;
+        }
+
+        /// <summary>
         /// Helper method to adjust a waiting time, in milliseconds, so it's uneven with the second turn around
         /// </summary>
         /// <param name="waitTimeMillis">The desired wait time</param>
@@ -191,7 +216,7 @@ namespace QuantConnect
             }
             return time;
         }
-        
+
         /// <summary>
         /// Create a C# DateTime from a UnixTimestamp
         /// </summary>
@@ -201,7 +226,7 @@ namespace QuantConnect
         {
             return UnixMillisecondTimeStampToDateTime(unixTimeStamp * SecondToMillisecond);
         }
-        
+
         /// <summary>
         /// Create a C# DateTime from a UnixTimestamp
         /// </summary>
@@ -587,7 +612,7 @@ namespace QuantConnect
         public static int TradeableDates(ICollection<Security> securities, DateTime start, DateTime finish)
         {
             var count = 0;
-            Log.Trace(Invariant($"Time.TradeableDates(): Security Count: {securities.Count}"));
+            Log.Trace(Invariant($"Time.TradeableDates(): {Messages.Time.SecurityCount(securities.Count)}"));
             try
             {
                 foreach (var day in EachDay(start, finish))
@@ -619,7 +644,7 @@ namespace QuantConnect
         {
             if (barSize <= TimeSpan.Zero)
             {
-                throw new ArgumentException("barSize must be greater than TimeSpan.Zero", nameof(barSize));
+                throw new ArgumentException(Messages.Time.InvalidBarSize, nameof(barSize));
             }
 
             // need to round down in data timezone because data is stored in this time zone
@@ -650,7 +675,7 @@ namespace QuantConnect
         {
             if (barSize <= TimeSpan.Zero)
             {
-                throw new ArgumentException("barSize must be greater than TimeSpan.Zero", nameof(barSize));
+                throw new ArgumentException(Messages.Time.InvalidBarSize, nameof(barSize));
             }
 
             var current = start;
@@ -692,7 +717,7 @@ namespace QuantConnect
         {
             if (barSize <= TimeSpan.Zero)
             {
-                throw new ArgumentException("barSize must be greater than TimeSpan.Zero", nameof(barSize));
+                throw new ArgumentException(Messages.Time.InvalidBarSize, nameof(barSize));
             }
 
             var count = 0;
@@ -771,6 +796,20 @@ namespace QuantConnect
         public static TimeSpan Abs(this TimeSpan timeSpan)
         {
             return TimeSpan.FromTicks(Math.Abs(timeSpan.Ticks));
+        }
+
+        /// <summary>
+        /// Helper method to deserialize month/year
+        /// </summary>
+        public class MonthYearJsonConverter : IsoDateTimeConverter
+        {
+            /// <summary>
+            /// Creates a new instance
+            /// </summary>
+            public MonthYearJsonConverter()
+            {
+                DateTimeFormat = @"MM/yy";
+            }
         }
     }
 }

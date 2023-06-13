@@ -51,7 +51,7 @@ namespace QuantConnect.Algorithm.CSharp
 
         protected void AssertOptionStrategyIsPresent(string name, int? quantity = null)
         {
-            if (Portfolio.PositionGroups.Where(group => group.BuyingPowerModel is OptionStrategyPositionGroupBuyingPowerModel)
+            if (Portfolio.Positions.Groups.Where(group => group.BuyingPowerModel is OptionStrategyPositionGroupBuyingPowerModel)
                 .Count(group => ((OptionStrategyPositionGroupBuyingPowerModel)@group.BuyingPowerModel).ToString() == name
                     && (!quantity.HasValue || Math.Abs(group.Quantity) == quantity)) != 1)
             {
@@ -61,7 +61,7 @@ namespace QuantConnect.Algorithm.CSharp
 
         protected void AssertDefaultGroup(Symbol symbol, decimal quantity)
         {
-            if (Portfolio.PositionGroups.Where(group => group.BuyingPowerModel is SecurityPositionGroupBuyingPowerModel)
+            if (Portfolio.Positions.Groups.Where(group => group.BuyingPowerModel is SecurityPositionGroupBuyingPowerModel)
                 .Count(group => group.Positions.Any(position => position.Symbol == symbol && position.Quantity == quantity)) != 1)
             {
                 throw new Exception($"Default groupd for symbol '{symbol}' and quantity '{quantity}' was not found!");
@@ -96,7 +96,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Order fill event handler. On an order fill update the resulting information is passed to this method.
         /// </summary>
-        /// <param name="orderEvent">Order event details containing details of the evemts</param>
+        /// <param name="orderEvent">Order event details containing details of the events</param>
         /// <remarks>This method can be called asynchronously and so should only be used by seasoned C# experts. Ensure you use proper locks on thread-unsafe objects</remarks>
         public override void OnOrderEvent(OrderEvent orderEvent)
         {

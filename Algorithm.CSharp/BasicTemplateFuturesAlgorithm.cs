@@ -59,7 +59,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             // set our expiry filter for this futures chain
             // SetFilter method accepts TimeSpan objects or integer for days.
-            // The following statements yield the same filtering criteria 
+            // The following statements yield the same filtering criteria
             futureSP500.SetFilter(TimeSpan.Zero, TimeSpan.FromDays(182));
             futureGold.SetFilter(0, 182);
 
@@ -151,60 +151,42 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 203367;
+        public long DataPoints => 75401;
 
         /// <summary>
         /// Data Points count of the algorithm history
         /// </summary>
-        public int AlgorithmHistoryDataPoints => 518;
+        public int AlgorithmHistoryDataPoints => 340;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "8220"},
+            {"Total Trades", "2700"},
             {"Average Win", "0.00%"},
             {"Average Loss", "0.00%"},
-            {"Compounding Annual Return", "-100.000%"},
-            {"Drawdown", "13.500%"},
-            {"Expectancy", "-0.818"},
-            {"Net Profit", "-13.517%"},
-            {"Sharpe Ratio", "-98.781"},
+            {"Compounding Annual Return", "-99.777%"},
+            {"Drawdown", "4.400%"},
+            {"Expectancy", "-0.724"},
+            {"Net Profit", "-4.430%"},
+            {"Sharpe Ratio", "-31.389"},
             {"Probabilistic Sharpe Ratio", "0%"},
-            {"Loss Rate", "89%"},
-            {"Win Rate", "11%"},
-            {"Profit-Loss Ratio", "0.69"},
-            {"Alpha", "-1.676"},
-            {"Beta", "0.042"},
-            {"Annual Standard Deviation", "0.01"},
-            {"Annual Variance", "0"},
-            {"Information Ratio", "-73.981"},
-            {"Tracking Error", "0.233"},
-            {"Treynor Ratio", "-23.975"},
-            {"Total Fees", "$15207.00"},
-            {"Estimated Strategy Capacity", "$8000.00"},
+            {"Loss Rate", "83%"},
+            {"Win Rate", "17%"},
+            {"Profit-Loss Ratio", "0.65"},
+            {"Alpha", "-3.059"},
+            {"Beta", "0.128"},
+            {"Annual Standard Deviation", "0.031"},
+            {"Annual Variance", "0.001"},
+            {"Information Ratio", "-81.232"},
+            {"Tracking Error", "0.212"},
+            {"Treynor Ratio", "-7.618"},
+            {"Total Fees", "$6237.00"},
+            {"Estimated Strategy Capacity", "$14000.00"},
             {"Lowest Capacity Asset", "GC VOFJUCDY9XNH"},
-            {"Fitness Score", "0.033"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "-8.62"},
-            {"Return Over Maximum Drawdown", "-7.81"},
-            {"Portfolio Turnover", "302.321"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "35b3f4b7a225468d42ca085386a2383e"}
+            {"Portfolio Turnover", "9912.69%"},
+            {"OrderListHash", "8f92e1528c6477a156449fd1e86527e7"}
         };
     }
 }

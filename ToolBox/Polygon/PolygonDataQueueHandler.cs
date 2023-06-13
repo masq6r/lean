@@ -56,20 +56,26 @@ namespace QuantConnect.ToolBox.Polygon
 
         private readonly DataQueueHandlerSubscriptionManager _subscriptionManager;
 
-        private readonly Dictionary<SecurityType, PolygonWebSocketClientWrapper> _webSocketClientWrappers = new Dictionary<SecurityType, PolygonWebSocketClientWrapper>();
+        private readonly ManualResetEvent _successfulAuthentication = new(false);
+        private readonly ManualResetEvent _failedAuthentication = new(false);
+
+        private readonly Dictionary<SecurityType, PolygonWebSocketClientWrapper> _webSocketClientWrappers = new();
         private readonly PolygonSymbolMapper _symbolMapper = new PolygonSymbolMapper();
         private readonly MarketHoursDatabase _marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
         private readonly SymbolPropertiesDatabase _symbolPropertiesDatabase = SymbolPropertiesDatabase.FromDataFolder();
 
         // exchange time zones by symbol
-        private readonly Dictionary<Symbol, DateTimeZone> _symbolExchangeTimeZones = new Dictionary<Symbol, DateTimeZone>();
+        private readonly Dictionary<Symbol, DateTimeZone> _symbolExchangeTimeZones = new();
 
         // map Polygon exchange -> Lean market
         // Crypto exchanges from: https://api.polygon.io/v1/meta/crypto-exchanges?apiKey=xxx
-        private readonly Dictionary<int, string> _cryptoExchangeMap = new Dictionary<int, string>
+        private readonly Dictionary<int, string> _cryptoExchangeMap = new()
         {
             { 1, Market.GDAX },
-            { 2, Market.Bitfinex }
+            { 2, Market.Bitfinex },
+            { 6, Market.Bitstamp },
+            { 10, Market.HitBTC },
+            { 23, Market.Kraken }
         };
 
         private int _dataPointCount;
@@ -97,10 +103,44 @@ namespace QuantConnect.ToolBox.Polygon
         {
             if (streamingEnabled)
             {
-                foreach (var securityType in new[] { SecurityType.Equity, SecurityType.Forex, SecurityType.Crypto })
+                var securityTypes = new[] { SecurityType.Equity, SecurityType.Forex, SecurityType.Crypto };
+
+                foreach (var securityType in securityTypes)
                 {
-                    var client = new PolygonWebSocketClientWrapper(_apiKey, _symbolMapper, securityType, OnMessage);
-                    _webSocketClientWrappers.Add(securityType, client);
+                    _failedAuthentication.Reset();
+                    _successfulAuthentication.Reset();
+
+                    var websocket = new PolygonWebSocketClientWrapper(_apiKey, _symbolMapper, securityType, OnMessage);
+
+                    var timedout = WaitHandle.WaitAny(new WaitHandle[] { _failedAuthentication, _successfulAuthentication }, TimeSpan.FromMinutes(2));
+                    if (timedout == WaitHandle.WaitTimeout)
+                    {
+                        // Close current websocket connection
+                        websocket.Close();
+                        // Close all connections that have been successful so far
+                        ShutdownWebSockets();
+                        throw new TimeoutException($"Timeout waiting for websocket to connect for {securityType}");
+                    }
+
+                    // If it hasn't timed out, it could still have failed.
+                    // For example, the API keys do not have rights to subscribe to the current security type
+                    // In this case, we close this connect and move on
+                    if (_failedAuthentication.WaitOne(0))
+                    {
+                        websocket.Close();
+                        continue;
+                    }
+
+                    _webSocketClientWrappers[securityType] = websocket;
+                }
+
+                // If we could not connect to any websocket because of the API rights,
+                // we exit this data queue handler
+                if (_webSocketClientWrappers.Count == 0)
+                {
+                    throw new InvalidOperationException(
+                        $"Websocket authentication failed for all security types: {string.Join(", ", securityTypes)}." +
+                        "Please confirm whether the subscription plan associated with your API keys includes support to websockets.");
                 }
             }
 
@@ -124,7 +164,7 @@ namespace QuantConnect.ToolBox.Polygon
         /// <summary>
         /// Indicates the connection is live.
         /// </summary>
-        public bool IsConnected => _webSocketClientWrappers.Values.All(client => client.IsOpen);
+        public bool IsConnected => _webSocketClientWrappers.Count > 0 && _webSocketClientWrappers.Values.All(client => client.IsOpen);
 
         /// <summary>
         /// Subscribe to the specified configuration
@@ -192,6 +232,7 @@ namespace QuantConnect.ToolBox.Polygon
         /// </summary>
         public void Dispose()
         {
+            ShutdownWebSockets();
             _dataAggregator.DisposeSafely();
         }
 
@@ -275,7 +316,7 @@ namespace QuantConnect.ToolBox.Polygon
                 Log.Error($"PolygonDataQueueHandler.ProcessHistoryRequests(): Unsupported history request: {request.Symbol.SecurityType}/{request.TickType}.");
                 yield break;
             }
-            
+
             Log.Trace("PolygonDataQueueHandler.ProcessHistoryRequests(): Submitting request: " +
                       Invariant($"{request.Symbol.SecurityType}-{request.TickType}-{request.Symbol.Value}: {request.Resolution} {request.StartTimeUtc}->{request.EndTimeUtc}"));
 
@@ -709,7 +750,7 @@ namespace QuantConnect.ToolBox.Polygon
                     tickerPrefix = string.Empty;
                     break;
             }
-            
+
             var resolutionTimeSpan = request.Resolution.ToTimeSpan();
             var lastRequestedBarStartTime = request.EndTimeUtc.RoundDown(resolutionTimeSpan);
             var start = request.StartTimeUtc.Date;
@@ -717,8 +758,7 @@ namespace QuantConnect.ToolBox.Polygon
 
             // Perform a check of the number of bars requested, this must not exceed a static limit
             var aggregatesCountPerResolution = GetAggregatesCountPerReselection(request.Resolution);
-            var dataRequestedCount = (end - start).Ticks
-                                     / resolutionTimeSpan.Ticks / aggregatesCountPerResolution;
+            var dataRequestedCount = (end - start).Ticks / resolutionTimeSpan.Ticks / aggregatesCountPerResolution;
 
             if (dataRequestedCount > ResponseSizeLimitAggregateData)
             {
@@ -726,7 +766,7 @@ namespace QuantConnect.ToolBox.Polygon
                 end = end.Date;
             }
 
-            while (start < lastRequestedBarStartTime.Date)
+            while (start < lastRequestedBarStartTime)
             {
                 var url = $"{HistoryBaseUrl}/v2/aggs/ticker/{tickerPrefix}{request.Symbol.Value}/range/1/{historyTimespan}/{start.Date:yyyy-MM-dd}/{end.Date:yyyy-MM-dd}" +
                           $"?apiKey={_apiKey}&limit={ResponseSizeLimitAggregateData}";
@@ -837,7 +877,7 @@ namespace QuantConnect.ToolBox.Polygon
             PolygonWebSocketClientWrapper client;
             if (!_webSocketClientWrappers.TryGetValue(securityType, out client))
             {
-                throw new Exception($"Unsupported security type: {securityType}");
+                throw new InvalidOperationException($"Unsupported security type: {securityType}");
             }
 
             return client;
@@ -882,8 +922,41 @@ namespace QuantConnect.ToolBox.Polygon
                     case "XQ":
                         ProcessCryptoQuote(obj.ToObject<CryptoQuoteMessage>());
                         break;
+
+                    case "status":
+                        var jstatus = obj["status"];
+                        if (jstatus != null && jstatus.Type == JTokenType.String)
+                        {
+                            var status = jstatus.ToString();
+                            if (status.Contains("auth_failed", StringComparison.InvariantCultureIgnoreCase))
+                            {
+                                var errorMessage = string.Empty;
+                                var jmessage = obj["message"];
+                                if (jmessage != null)
+                                {
+                                    errorMessage = jmessage.ToString();
+                                }
+                                Log.Error($"PolygonDataQueueHandler(): authentication failed: '{errorMessage}'.");
+                                _failedAuthentication.Set();
+                            }
+                            else if (status.Contains("auth_success", StringComparison.InvariantCultureIgnoreCase))
+                            {
+                                Log.Trace($"PolygonDataQueueHandler(): successful authentication.");
+                                _successfulAuthentication.Set();
+                            }
+                        }
+                        break;
                 }
             }
+        }
+
+        private void ShutdownWebSockets()
+        {
+            foreach (var websocket in _webSocketClientWrappers)
+            {
+                websocket.Value.Close();
+            }
+            _webSocketClientWrappers.Clear();
         }
 
         private void ProcessEquityTrade(EquityTradeMessage trade)
@@ -999,11 +1072,19 @@ namespace QuantConnect.ToolBox.Polygon
 
         private DateTime GetTickTime(Symbol symbol, DateTime utcTime)
         {
-            DateTimeZone exchangeTimeZone;
-            if (!_symbolExchangeTimeZones.TryGetValue(symbol, out exchangeTimeZone))
+            if (!_symbolExchangeTimeZones.TryGetValue(symbol, out var exchangeTimeZone))
             {
                 // read the exchange time zone from market-hours-database
-                exchangeTimeZone = _marketHoursDatabase.GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType).TimeZone;
+                if (_marketHoursDatabase.TryGetEntry(symbol.ID.Market, symbol, symbol.SecurityType, out var entry))
+                {
+                    exchangeTimeZone = entry.ExchangeHours.TimeZone;
+                }
+                // If there is no entry for the given Symbol, default to New York
+                else
+                {
+                    exchangeTimeZone = TimeZones.NewYork;
+                }
+
                 _symbolExchangeTimeZones.Add(symbol, exchangeTimeZone);
             }
 
@@ -1039,9 +1120,23 @@ namespace QuantConnect.ToolBox.Polygon
                 return null;
             }
 
+            // If the data download was not successful, log the reason
+            var parsedResult = JObject.Parse(result);
+            var success = parsedResult["success"]?.Value<bool>() ?? false;
+            if (!success)
+            {
+                success = parsedResult["status"]?.ToString().ToUpperInvariant() == "OK";
+            }
+
+            if (!success)
+            {
+                Log.Debug($"No data for {url}. Reason: {result}");
+                return null;
+            }
+
             if (jsonPropertyName != null)
             {
-                result = JObject.Parse(result)[jsonPropertyName]?.ToString();
+                result = parsedResult[jsonPropertyName]?.ToString();
             }
 
             return result == null ? null : JsonConvert.DeserializeObject(result, type);

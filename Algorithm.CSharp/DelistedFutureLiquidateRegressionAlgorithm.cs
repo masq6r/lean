@@ -30,6 +30,7 @@ namespace QuantConnect.Algorithm.CSharp
     public class DelistedFutureLiquidateRegressionAlgorithm : QCAlgorithm, IRegressionAlgorithmDefinition
     {
         private Symbol _contractSymbol;
+        protected virtual Resolution Resolution => Resolution.Minute;
 
         /// <summary>
         /// Initialize your algorithm and add desired assets.
@@ -39,7 +40,7 @@ namespace QuantConnect.Algorithm.CSharp
             SetStartDate(2013, 10, 08);
             SetEndDate(2013, 12, 30);
 
-            var futureSP500 = AddFuture(Futures.Indices.SP500EMini);
+            var futureSP500 = AddFuture(Futures.Indices.SP500EMini, Resolution);
             futureSP500.SetFilter(0, 182);
         }
 
@@ -91,7 +92,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 1224778;
+        public virtual long DataPoints => 511797;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -101,50 +102,32 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
-        public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
+        public virtual Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
             {"Total Trades", "2"},
-            {"Average Win", "1.64%"},
+            {"Average Win", "7.02%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "7.329%"},
-            {"Drawdown", "1.300%"},
+            {"Compounding Annual Return", "34.386%"},
+            {"Drawdown", "1.500%"},
             {"Expectancy", "0"},
-            {"Net Profit", "1.642%"},
-            {"Sharpe Ratio", "2.36"},
-            {"Probabilistic Sharpe Ratio", "94.555%"},
+            {"Net Profit", "7.017%"},
+            {"Sharpe Ratio", "3.306"},
+            {"Probabilistic Sharpe Ratio", "99.828%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "100%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0.006"},
-            {"Beta", "0.158"},
-            {"Annual Standard Deviation", "0.03"},
-            {"Annual Variance", "0.001"},
-            {"Information Ratio", "-4.44"},
-            {"Tracking Error", "0.075"},
-            {"Treynor Ratio", "0.441"},
-            {"Total Fees", "$1.85"},
-            {"Estimated Strategy Capacity", "$170000000.00"},
+            {"Alpha", "0.234"},
+            {"Beta", "0.108"},
+            {"Annual Standard Deviation", "0.084"},
+            {"Annual Variance", "0.007"},
+            {"Information Ratio", "-1.122"},
+            {"Tracking Error", "0.112"},
+            {"Treynor Ratio", "2.571"},
+            {"Total Fees", "$2.15"},
+            {"Estimated Strategy Capacity", "$1700000000.00"},
             {"Lowest Capacity Asset", "ES VMKLFZIH2MTD"},
-            {"Fitness Score", "0.019"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "1.369"},
-            {"Return Over Maximum Drawdown", "9.749"},
-            {"Portfolio Turnover", "0.023"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "4c5e32aedcd5bb67642d1629628fe615"}
+            {"Portfolio Turnover", "2.01%"},
+            {"OrderListHash", "72b6408c884da76f55bb74ba4502a5ba"}
         };
     }
 }

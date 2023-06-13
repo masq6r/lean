@@ -59,7 +59,7 @@ namespace QuantConnect.Interfaces
         /// Gets/sets the SetHoldings buffers value.
         /// The buffer is used for orders not to be rejected due to volatility when using SetHoldings and CalculateOrderQuantity
         /// </summary>
-        decimal FreePortfolioValue { get; set; }
+        decimal? FreePortfolioValue { get; set; }
 
         /// <summary>
         /// Gets/sets the SetHoldings buffers value percentage.
@@ -86,5 +86,11 @@ namespace QuantConnect.Interfaces
         /// Gets the minimum time span elapsed to consider a market fill price as stale (defaults to one hour)
         /// </summary>
         TimeSpan StalePriceTimeSpan { get; set; }
+
+        /// <summary>
+        /// The warmup resolution to use if any
+        /// </summary>
+        /// <remarks>This allows improving the warmup speed by setting it to a lower resolution than the one added in the algorithm</remarks>
+        Resolution? WarmupResolution { get; set; }
     }
 }

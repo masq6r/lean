@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -16,7 +16,6 @@
 using System;
 using NodaTime;
 using QuantConnect.Util;
-using System.ComponentModel;
 using QuantConnect.Securities;
 using System.Collections.Generic;
 using QuantConnect.Data.Consolidators;
@@ -137,6 +136,12 @@ namespace QuantConnect.Data
             set
             {
                 var oldMappedValue = MappedSymbol;
+                if(ContractDepthOffset == 0 && oldMappedValue == value)
+                {
+                    // Do less if we can.
+                    // We can only do this for sure if 'ContractDepthOffset' is 0 else the value we got might be outdated and will change bellow
+                    return;
+                }
                 var oldSymbol = Symbol;
                 Symbol = Symbol.UpdateMappedSymbol(value, ContractDepthOffset);
 
@@ -217,7 +222,6 @@ namespace QuantConnect.Data
             Resolution = resolution;
             _sid = symbol.ID;
             Symbol = symbol;
-            FillDataForward = fillForward;
             ExtendedMarketHours = extendedHours;
             PriceScaleFactor = 1;
             IsInternalFeed = isInternalFeed;
@@ -233,28 +237,9 @@ namespace QuantConnect.Data
 
             TickType = tickType ?? LeanData.GetCommonTickTypeForCommonDataTypes(objectType, SecurityType);
 
-            switch (resolution)
-            {
-                case Resolution.Tick:
-                    //Ticks are individual sales and fillforward doesn't apply.
-                    Increment = TimeSpan.FromSeconds(0);
-                    FillDataForward = false;
-                    break;
-                case Resolution.Second:
-                    Increment = TimeSpan.FromSeconds(1);
-                    break;
-                case Resolution.Minute:
-                    Increment = TimeSpan.FromMinutes(1);
-                    break;
-                case Resolution.Hour:
-                    Increment = TimeSpan.FromHours(1);
-                    break;
-                case Resolution.Daily:
-                    Increment = TimeSpan.FromDays(1);
-                    break;
-                default:
-                    throw new InvalidEnumArgumentException(Invariant($"Unexpected Resolution: {resolution}"));
-            }
+            Increment = resolution.ToTimeSpan();
+            //Ticks are individual sales and fillforward doesn't apply.
+            FillDataForward = resolution == Resolution.Tick ? false : fillForward;
         }
 
         /// <summary>

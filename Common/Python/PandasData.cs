@@ -21,6 +21,7 @@ using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 
@@ -31,14 +32,56 @@ namespace QuantConnect.Python
     /// </summary>
     public class PandasData
     {
-        private static dynamic _pandas;
+        private const string Open = "open";
+        private const string High = "high";
+        private const string Low = "low";
+        private const string Close = "close";
+        private const string Volume = "volume";
+
+        private const string AskOpen = "askopen";
+        private const string AskHigh = "askhigh";
+        private const string AskLow = "asklow";
+        private const string AskClose = "askclose";
+        private const string AskPrice = "askprice";
+        private const string AskSize = "asksize";
+
+        private const string BidOpen = "bidopen";
+        private const string BidHigh = "bidhigh";
+        private const string BidLow = "bidlow";
+        private const string BidClose = "bidclose";
+        private const string BidPrice = "bidprice";
+        private const string BidSize = "bidsize";
+
+        private const string LastPrice = "lastprice";
+        private const string Quantity = "quantity";
+        private const string Exchange = "exchange";
+        private const string Suspicious = "suspicious";
+        private const string OpenInterest = "openinterest";
+
+        // we keep these so we don't need to ask for them each time
+        private static PyString _empty;
+        private static PyObject _pandas;
+        private static PyObject _seriesFactory;
+        private static PyObject _dataFrameFactory;
+        private static PyObject _multiIndexFactory;
+
+        private static PyList _defaultNames;
+        private static PyList _level2Names;
+        private static PyList _level3Names;
+
         private readonly static HashSet<string> _baseDataProperties = typeof(BaseData).GetProperties().ToHashSet(x => x.Name.ToLowerInvariant());
-        private readonly static ConcurrentDictionary<Type, List<MemberInfo>> _membersByType = new ConcurrentDictionary<Type, List<MemberInfo>>();
+        private readonly static ConcurrentDictionary<Type, IEnumerable<MemberInfo>> _membersByType = new ();
+        private readonly static IReadOnlyList<string> _standardColumns = new string []
+        {
+                Open,    High,    Low,    Close, LastPrice,  Volume,
+            AskOpen, AskHigh, AskLow, AskClose,  AskPrice, AskSize, Quantity, Suspicious,
+            BidOpen, BidHigh, BidLow, BidClose,  BidPrice, BidSize, Exchange, OpenInterest
+        };
 
         private readonly Symbol _symbol;
-        private readonly Dictionary<string, Tuple<List<DateTime>, List<object>>> _series;
+        private readonly Dictionary<string, Serie> _series;
 
-        private readonly List<MemberInfo> _members;
+        private readonly IEnumerable<MemberInfo> _members = Enumerable.Empty<MemberInfo>();
 
         /// <summary>
         /// Gets true if this is a custom data request, false for normal QC data
@@ -61,6 +104,18 @@ namespace QuantConnect.Python
                 {
                     // Use our PandasMapper class that modifies pandas indexing to support tickers, symbols and SIDs
                     _pandas = Py.Import("PandasMapper");
+                    _seriesFactory = _pandas.GetAttr("Series");
+                    _dataFrameFactory = _pandas.GetAttr("DataFrame");
+                    using var multiIndex = _pandas.GetAttr("MultiIndex");
+                    _multiIndexFactory = multiIndex.GetAttr("from_tuples");
+                    _empty = new PyString(string.Empty);
+
+                    var time = new PyString("time");
+                    var symbol = new PyString("symbol");
+                    var expiry = new PyString("expiry");
+                    _defaultNames = new PyList(new PyObject[] { expiry, new PyString("strike"), new PyString("type"), symbol, time });
+                    _level2Names = new PyList(new PyObject[] { symbol, time });
+                    _level3Names = new PyList(new PyObject[] { expiry, symbol, time });
                 }
             }
 
@@ -77,18 +132,12 @@ namespace QuantConnect.Python
 
             var type = data.GetType();
             IsCustomData = type.Namespace != typeof(Bar).Namespace;
-            _members = new List<MemberInfo>();
             _symbol = ((IBaseData)data).Symbol;
 
             if (_symbol.SecurityType == SecurityType.Future) Levels = 3;
             if (_symbol.SecurityType.IsOption()) Levels = 5;
 
-            var columns = new HashSet<string>
-            {
-                   "open",    "high",    "low",    "close", "lastprice",  "volume",
-                "askopen", "askhigh", "asklow", "askclose",  "askprice", "asksize", "quantity", "suspicious",
-                "bidopen", "bidhigh", "bidlow", "bidclose",  "bidprice", "bidsize", "exchange", "openinterest"
-            };
+            IEnumerable<string> columns = _standardColumns;
 
             if (IsCustomData)
             {
@@ -108,7 +157,7 @@ namespace QuantConnect.Python
                         var duplicateKeys = members.GroupBy(x => x.Name.ToLowerInvariant()).Where(x => x.Count() > 1).Select(x => x.Key);
                         foreach (var duplicateKey in duplicateKeys)
                         {
-                            throw new ArgumentException($"PandasData.ctor(): More than one \'{duplicateKey}\' member was found in \'{type.FullName}\' class.");
+                            throw new ArgumentException($"PandasData.ctor(): {Messages.PandasData.DuplicateKey(duplicateKey, type.FullName)}");
                         }
 
                         // If the custom data derives from a Market Data (e.g. Tick, TradeBar, QuoteBar), exclude its keys
@@ -124,11 +173,14 @@ namespace QuantConnect.Python
                     }
                 }
 
-                columns.Add("value");
-                columns.UnionWith(keys);
+                var customColumns = new HashSet<string>(columns);
+                customColumns.Add("value");
+                customColumns.UnionWith(keys);
+
+                columns = customColumns;
             }
 
-            _series = columns.ToDictionary(k => k, v => Tuple.Create(new List<DateTime>(), new List<object>()));
+            _series = columns.ToDictionary(k => k, v => new Serie());
         }
 
         /// <summary>
@@ -140,7 +192,7 @@ namespace QuantConnect.Python
             foreach (var member in _members)
             {
                 var key = member.Name.ToLowerInvariant();
-                var endTime = ((IBaseData) baseData).EndTime;
+                var endTime = ((IBaseData)baseData).EndTime;
                 var propertyMember = member as PropertyInfo;
                 if (propertyMember != null)
                 {
@@ -168,80 +220,105 @@ namespace QuantConnect.Python
             }
             else
             {
-                var ticks = new List<Tick> { baseData as Tick };
-                var tradeBar = baseData as TradeBar;
-                var quoteBar = baseData as QuoteBar;
-                Add(ticks, tradeBar, quoteBar);
+                var tick = baseData as Tick;
+                if (tick != null)
+                {
+                    AddTick(tick);
+                }
+                else
+                {
+                    var tradeBar = baseData as TradeBar;
+                    var quoteBar = baseData as QuoteBar;
+                    Add(tradeBar, quoteBar);
+                }
             }
         }
 
         /// <summary>
         /// Adds Lean data objects to the end of the lists
         /// </summary>
-        /// <param name="ticks">List of <see cref="Tick"/> object that contains tick information of the security</param>
         /// <param name="tradeBar"><see cref="TradeBar"/> object that contains trade bar information of the security</param>
         /// <param name="quoteBar"><see cref="QuoteBar"/> object that contains quote bar information of the security</param>
-        public void Add(IEnumerable<Tick> ticks, TradeBar tradeBar, QuoteBar quoteBar)
+        public void Add(TradeBar tradeBar, QuoteBar quoteBar)
         {
             if (tradeBar != null)
             {
                 var time = tradeBar.EndTime;
-                AddToSeries("open", time, tradeBar.Open);
-                AddToSeries("high", time, tradeBar.High);
-                AddToSeries("low", time, tradeBar.Low);
-                AddToSeries("close", time, tradeBar.Close);
-                AddToSeries("volume", time, tradeBar.Volume);
+                GetSerie(Open).Add(time, tradeBar.Open);
+                GetSerie(High).Add(time, tradeBar.High);
+                GetSerie(Low).Add(time, tradeBar.Low);
+                GetSerie(Close).Add(time, tradeBar.Close);
+                GetSerie(Volume).Add(time, tradeBar.Volume);
             }
             if (quoteBar != null)
             {
                 var time = quoteBar.EndTime;
                 if (tradeBar == null)
                 {
-                    AddToSeries("open", time, quoteBar.Open);
-                    AddToSeries("high", time, quoteBar.High);
-                    AddToSeries("low", time, quoteBar.Low);
-                    AddToSeries("close", time, quoteBar.Close);
+                    GetSerie(Open).Add(time, quoteBar.Open);
+                    GetSerie(High).Add(time, quoteBar.High);
+                    GetSerie(Low).Add(time, quoteBar.Low);
+                    GetSerie(Close).Add(time, quoteBar.Close);
                 }
                 if (quoteBar.Ask != null)
                 {
-                    AddToSeries("askopen", time, quoteBar.Ask.Open);
-                    AddToSeries("askhigh", time, quoteBar.Ask.High);
-                    AddToSeries("asklow", time, quoteBar.Ask.Low);
-                    AddToSeries("askclose", time, quoteBar.Ask.Close);
-                    AddToSeries("asksize", time, quoteBar.LastAskSize);
+                    GetSerie(AskOpen).Add(time, quoteBar.Ask.Open);
+                    GetSerie(AskHigh).Add(time, quoteBar.Ask.High);
+                    GetSerie(AskLow).Add(time, quoteBar.Ask.Low);
+                    GetSerie(AskClose).Add(time, quoteBar.Ask.Close);
+                    GetSerie(AskSize).Add(time, quoteBar.LastAskSize);
                 }
                 if (quoteBar.Bid != null)
                 {
-                    AddToSeries("bidopen", time, quoteBar.Bid.Open);
-                    AddToSeries("bidhigh", time, quoteBar.Bid.High);
-                    AddToSeries("bidlow", time, quoteBar.Bid.Low);
-                    AddToSeries("bidclose", time, quoteBar.Bid.Close);
-                    AddToSeries("bidsize", time, quoteBar.LastBidSize);
+                    GetSerie(BidOpen).Add(time, quoteBar.Bid.Open);
+                    GetSerie(BidHigh).Add(time, quoteBar.Bid.High);
+                    GetSerie(BidLow).Add(time, quoteBar.Bid.Low);
+                    GetSerie(BidClose).Add(time, quoteBar.Bid.Close);
+                    GetSerie(BidSize).Add(time, quoteBar.LastBidSize);
                 }
             }
-            if (ticks != null)
+        }
+
+        /// <summary>
+        /// Adds a tick data point to this pandas collection
+        /// </summary>
+        /// <param name="tick"><see cref="Tick"/> object that contains tick information of the security</param>
+        public void AddTick(Tick tick)
+        {
+            var time = tick.EndTime;
+
+            // We will fill some series with null for tick types that don't have a value for that series, so that we make sure
+            // the indices are the same for every tick series.
+
+            if (tick.TickType == TickType.Quote)
             {
-                foreach (var tick in ticks)
-                {
-                    if (tick == null) continue;
+                GetSerie(AskPrice).Add(time, tick.AskPrice);
+                GetSerie(AskSize).Add(time, tick.AskSize);
+                GetSerie(BidPrice).Add(time, tick.BidPrice);
+                GetSerie(BidSize).Add(time, tick.BidSize);
+            }
+            else
+            {
+                // Trade and open interest ticks don't have these values, so we'll fill them with null.
+                GetSerie(AskPrice).Add(time, null);
+                GetSerie(AskSize).Add(time, null);
+                GetSerie(BidPrice).Add(time, null);
+                GetSerie(BidSize).Add(time, null);
+            }
 
-                    var time = tick.EndTime;
-                    var column = tick.TickType == TickType.OpenInterest
-                        ? "openinterest"
-                        : "lastprice";
+            GetSerie(Exchange).Add(time, tick.Exchange);
+            GetSerie(Suspicious).Add(time, tick.Suspicious);
+            GetSerie(Quantity).Add(time, tick.Quantity);
 
-                    if (tick.TickType == TickType.Quote)
-                    {
-                        AddToSeries("askprice", time, tick.AskPrice);
-                        AddToSeries("asksize", time, tick.AskSize);
-                        AddToSeries("bidprice", time, tick.BidPrice);
-                        AddToSeries("bidsize", time, tick.BidSize);
-                    }
-                    AddToSeries("exchange", time, tick.Exchange);
-                    AddToSeries("suspicious", time, tick.Suspicious);
-                    AddToSeries("quantity", time, tick.Quantity);
-                    AddToSeries(column, time, tick.LastPrice);
-                }
+            if (tick.TickType == TickType.OpenInterest)
+            {
+                GetSerie(OpenInterest).Add(time, tick.Value);
+                GetSerie(LastPrice).Add(time, null);
+            }
+            else
+            {
+                GetSerie(LastPrice).Add(time, tick.Value);
+                GetSerie(OpenInterest).Add(time, null);
             }
         }
 
@@ -252,76 +329,110 @@ namespace QuantConnect.Python
         /// <returns>pandas.DataFrame object</returns>
         public PyObject ToPandasDataFrame(int levels = 2)
         {
-            var empty = new PyString(string.Empty);
-            var list = Enumerable.Repeat<PyObject>(empty, 5).ToList();
-            list[3] = _symbol.ID.ToString().ToPython();
-
-            if (_symbol.SecurityType == SecurityType.Future)
-            {
-                list[0] = _symbol.ID.Date.ToPython();
-                list[3] = _symbol.ID.ToString().ToPython();
-            }
-            if (_symbol.SecurityType.IsOption())
-            {
-                list[0] = _symbol.ID.Date.ToPython();
-                list[1] = _symbol.ID.StrikePrice.ToPython();
-                list[2] = _symbol.ID.OptionRight.ToString().ToPython();
-                list[3] = _symbol.ID.ToString().ToPython();
-            }
+            List<PyObject> list;
+            var symbol = _symbol.ID.ToString().ToPython();
 
             // Create the index labels
-            var names = "expiry,strike,type,symbol,time";
+            var names = _defaultNames;
             if (levels == 2)
             {
-                names = "symbol,time";
-                list.RemoveRange(0, 3);
+                // symbol, time
+                names = _level2Names;
+                list = new List<PyObject> { symbol, _empty };
             }
-            if (levels == 3)
+            else if (levels == 3)
             {
-                names = "expiry,symbol,time";
-                list.RemoveRange(1, 2);
+                // expiry, symbol, time
+                names = _level3Names;
+                list = new List<PyObject> { _symbol.ID.Date.ToPython(), symbol, _empty };
             }
-
-            Func<object, bool> filter = x =>
+            else
             {
-                var isNaNOrZero = x is double && ((double)x).IsNaNOrZero();
-                var isNullOrWhiteSpace = x is string && string.IsNullOrWhiteSpace((string)x);
-                var isFalse = x is bool && !(bool)x;
-                return x == null || isNaNOrZero || isNullOrWhiteSpace || isFalse;
-            };
-            Func<DateTime, PyTuple> selector = x =>
-            {
-                list[list.Count - 1] = x.ToPython();
-                return new PyTuple(list.ToArray());
-            };
-            // creating the pandas MultiIndex is expensive so we keep a cash
-            var indexCache = new Dictionary<List<DateTime>, dynamic>(new ListComparer<DateTime>());
-            using (Py.GIL())
-            {
-                // Returns a dictionary keyed by column name where values are pandas.Series objects
-                var pyDict = new PyDict();
-                var splitNames = names.Split(',');
-                foreach (var kvp in _series)
+                list = new List<PyObject> { _empty, _empty, _empty, symbol, _empty };
+                if (_symbol.SecurityType == SecurityType.Future)
                 {
-                    var values = kvp.Value.Item2;
-                    if (values.All(filter)) continue;
-
-                    dynamic index;
-                    if (!indexCache.TryGetValue(kvp.Value.Item1, out index))
-                    {
-                        var tuples = kvp.Value.Item1.Select(selector).ToArray();
-                        index = _pandas.MultiIndex.from_tuples(tuples, names: splitNames);
-                        indexCache[kvp.Value.Item1] = index;
-                    }
-
-                    // Adds pandas.Series value keyed by the column name
-                    pyDict.SetItem(kvp.Key, _pandas.Series(values, index));
+                    list[0] = _symbol.ID.Date.ToPython();
                 }
-                _series.Clear();
-
-                // Create the DataFrame
-                return _pandas.DataFrame(pyDict);
+                else if (_symbol.SecurityType.IsOption())
+                {
+                    list[0] = _symbol.ID.Date.ToPython();
+                    list[1] = _symbol.ID.StrikePrice.ToPython();
+                    list[2] = _symbol.ID.OptionRight.ToString().ToPython();
+                }
             }
+
+            // creating the pandas MultiIndex is expensive so we keep a cash
+            var indexCache = new Dictionary<List<DateTime>, PyObject>(new ListComparer<DateTime>());
+            // Returns a dictionary keyed by column name where values are pandas.Series objects
+            using var pyDict = new PyDict();
+            foreach (var kvp in _series)
+            {
+                if (kvp.Value.ShouldFilter) continue;
+
+                if (!indexCache.TryGetValue(kvp.Value.Times, out var index))
+                {
+                    using var tuples = kvp.Value.Times.Select(time => CreateTupleIndex(time, list)).ToPyListUnSafe();
+                    using var namesDic = Py.kw("names", names);
+
+                    indexCache[kvp.Value.Times] = index = _multiIndexFactory.Invoke(new[] { tuples }, namesDic);
+
+                    foreach (var pyObject in tuples)
+                    {
+                        pyObject.Dispose();
+                    }
+                }
+
+                // Adds pandas.Series value keyed by the column name
+                using var pyvalues = new PyList();
+                for (var i = 0; i < kvp.Value.Values.Count; i++)
+                {
+                    using var pyObject = kvp.Value.Values[i].ToPython();
+                    pyvalues.Append(pyObject);
+                }
+                using var series = _seriesFactory.Invoke(pyvalues, index);
+                pyDict.SetItem(kvp.Key, series);
+            }
+            _series.Clear();
+            foreach (var kvp in indexCache)
+            {
+                kvp.Value.Dispose();
+            }
+
+            for (var i = 0; i < list.Count; i++)
+            {
+                DisposeIfNotEmpty(list[i]);
+            }
+
+            // Create the DataFrame
+            var result = _dataFrameFactory.Invoke(pyDict);
+
+            foreach (var item in pyDict)
+            {
+                item.Dispose();
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Only dipose of the PyObject if it was set to something different than empty
+        /// </summary>
+        private static void DisposeIfNotEmpty(PyObject pyObject)
+        {
+            if (!ReferenceEquals(pyObject, _empty))
+            {
+                pyObject.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Create a new tuple index
+        /// </summary>
+        private static PyTuple CreateTupleIndex(DateTime index, List<PyObject> list)
+        {
+            DisposeIfNotEmpty(list[list.Count - 1]);
+            list[list.Count - 1] = index.ToPython();
+            return new PyTuple(list.ToArray());
         }
 
         /// <summary>
@@ -332,16 +443,17 @@ namespace QuantConnect.Python
         /// <param name="input"><see cref="Object"/> to add to the value associated with the specific key. Can be null.</param>
         private void AddToSeries(string key, DateTime time, object input)
         {
-            Tuple<List<DateTime>, List<object>> value;
-            if (_series.TryGetValue(key, out value))
+            var serie = GetSerie(key);
+            serie.Add(time, input);
+        }
+
+        private Serie GetSerie(string key)
+        {
+            if (!_series.TryGetValue(key, out var value))
             {
-                value.Item1.Add(time);
-                value.Item2.Add(input is decimal ? input.ConvertInvariant<double>() : input);
+                throw new ArgumentException($"PandasData.GetSerie(): {Messages.PandasData.KeyNotFoundInSeries(key)}");
             }
-            else
-            {
-                throw new ArgumentException($"PandasData.AddToSeries(): {key} key does not exist in series dictionary.");
-            }
+            return value;
         }
 
         /// <summary>
@@ -355,6 +467,63 @@ namespace QuantConnect.Python
             return baseType.IsAssignableFrom(type)
                 ? baseType.GetProperties().Select(x => x.Name.ToLowerInvariant())
                 : Enumerable.Empty<string>();
+        }
+
+        private class Serie
+        {
+            private static readonly IFormatProvider InvariantCulture = CultureInfo.InvariantCulture;
+            public bool ShouldFilter { get; set; } = true;
+            public List<DateTime> Times { get; set; } = new();
+            public List<object> Values { get; set; } = new();
+
+            public void Add(DateTime time, object input)
+            {
+                var value = input is decimal ? Convert.ToDouble(input, InvariantCulture) : input;
+                if (ShouldFilter)
+                {
+                    // we need at least 1 valid entry for the series not to get filtered
+                    if (value is double)
+                    {
+                        if (!((double)value).IsNaNOrZero())
+                        {
+                            ShouldFilter = false;
+                        }
+                    }
+                    else if (value is string)
+                    {
+                        if (!string.IsNullOrWhiteSpace((string)value))
+                        {
+                            ShouldFilter = false;
+                        }
+                    }
+                    else if (value is bool)
+                    {
+                        if ((bool)value)
+                        {
+                            ShouldFilter = false;
+                        }
+                    }
+                    else if (value != null)
+                    {
+                        ShouldFilter = false;
+                    }
+                }
+
+                Values.Add(value);
+                Times.Add(time);
+            }
+
+            public void Add(DateTime time, decimal input)
+            {
+                var value = Convert.ToDouble(input, InvariantCulture);
+                if (ShouldFilter && !value.IsNaNOrZero())
+                {
+                    ShouldFilter = false;
+                }
+
+                Values.Add(value);
+                Times.Add(time);
+            }
         }
     }
 }

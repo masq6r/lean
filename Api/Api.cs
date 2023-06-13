@@ -30,6 +30,7 @@ using QuantConnect.Optimizer.Parameters;
 using QuantConnect.Orders;
 using QuantConnect.Statistics;
 using QuantConnect.Util;
+using QuantConnect.Notifications;
 
 namespace QuantConnect.Api
 {
@@ -250,6 +251,50 @@ namespace QuantConnect.Api
             return result;
         }
 
+        /// <summary>
+        /// Read all nodes in a project.
+        /// </summary>
+        /// <param name="projectId">Project id to which the nodes refer</param>
+        /// <returns><see cref="ProjectNodesResponse"/> that includes the information about all nodes in the project</returns>
+        public ProjectNodesResponse ReadProjectNodes(int projectId)
+        {
+            var request = new RestRequest("projects/nodes/read", Method.POST)
+            {
+                RequestFormat = DataFormat.Json
+            };
+
+            request.AddParameter("application/json", JsonConvert.SerializeObject(new
+            {
+                projectId
+            }), ParameterType.RequestBody);
+
+            ApiConnection.TryRequest(request, out ProjectNodesResponse result);
+            return result;
+        }
+
+        /// <summary>
+        /// Update the active state of some nodes to true.
+        /// If you don't provide any nodes, all the nodes become inactive and AutoSelectNode is true.
+        /// </summary>
+        /// <param name="projectId">Project id to which the nodes refer</param>
+        /// <param name="nodes">List of node ids to update</param>
+        /// <returns><see cref="ProjectNodesResponse"/> that includes the information about all nodes in the project</returns>
+        public ProjectNodesResponse UpdateProjectNodes(int projectId, string[] nodes)
+        {
+            var request = new RestRequest("projects/nodes/update", Method.POST)
+            {
+                RequestFormat = DataFormat.Json
+            };
+
+            request.AddParameter("application/json", JsonConvert.SerializeObject(new
+            {
+                projectId,
+                nodes
+            }), ParameterType.RequestBody);
+
+            ApiConnection.TryRequest(request, out ProjectNodesResponse result);
+            return result;
+        }
 
         /// <summary>
         /// Read a file in a project
@@ -367,6 +412,16 @@ namespace QuantConnect.Api
             return result;
         }
 
+        /// <summary>
+        /// Sends a notification
+        /// </summary>
+        /// <param name="notification">The notification to send</param>
+        /// <param name="projectId">The project id</param>
+        /// <returns><see cref="RestResponse"/> containing success response and errors</returns>
+        public virtual RestResponse SendNotification(Notification notification, int projectId)
+        {
+            throw new NotImplementedException($"{nameof(Api)} does not support sending notifications");
+        }
 
         /// <summary>
         /// Create a new backtest request and get the id.
@@ -476,6 +531,34 @@ namespace QuantConnect.Api
 
             // Return only the backtest object
             return result.Backtest;
+        }
+
+        /// <summary>
+        /// Returns the orders of the specified backtest and project id.
+        /// </summary>
+        /// <param name="projectId">Id of the project from which to read the orders</param>
+        /// <param name="backtestId">Id of the backtest from which to read the orders</param>
+        /// <param name="start">Starting index of the orders to be fetched. Required if end > 100</param>
+        /// <param name="end">Last index of the orders to be fetched. Note that end - start must be less than 100</param>
+        /// <remarks>Will throw an <see cref="WebException"/> if there are any API errors</remarks>
+        /// <returns>The list of <see cref="Order"/></returns>
+
+        public List<Order> ReadBacktestOrders(int projectId, string backtestId, int start = 0, int end = 100)
+        {
+            var request = new RestRequest("backtests/read/orders", Method.POST)
+            {
+                RequestFormat = DataFormat.Json
+            };
+
+            request.AddParameter("application/json", JsonConvert.SerializeObject(new
+            {
+                start,
+                end,
+                projectId,
+                backtestId
+            }), ParameterType.RequestBody);
+
+            return MakeRequestOrThrow<OrdersResponseWrapper>(request, nameof(ReadBacktestOrders)).Orders;
         }
 
         /// <summary>
@@ -659,6 +742,32 @@ namespace QuantConnect.Api
 
             ApiConnection.TryRequest(request, out LiveAlgorithmResults result);
             return result;
+        }
+
+        /// <summary>
+        /// Returns the orders of the specified project id live algorithm.
+        /// </summary>
+        /// <param name="projectId">Id of the project from which to read the live orders</param>
+        /// <param name="start">Starting index of the orders to be fetched. Required if end > 100</param>
+        /// <param name="end">Last index of the orders to be fetched. Note that end - start must be less than 100</param>
+        /// <remarks>Will throw an <see cref="WebException"/> if there are any API errors</remarks>
+        /// <returns>The list of <see cref="Order"/></returns>
+
+        public List<Order> ReadLiveOrders(int projectId, int start = 0, int end = 100)
+        {
+            var request = new RestRequest("live/read/orders", Method.POST)
+            {
+                RequestFormat = DataFormat.Json
+            };
+
+            request.AddParameter("application/json", JsonConvert.SerializeObject(new
+            {
+                start,
+                end,
+                projectId
+            }), ParameterType.RequestBody);
+
+            return MakeRequestOrThrow<OrdersResponseWrapper>(request, nameof(ReadLiveOrders)).Orders;
         }
 
         /// <summary>
@@ -1012,126 +1121,6 @@ namespace QuantConnect.Api
         }
 
         /// <summary>
-        /// Create a new node in the organization, node configuration is defined by the
-        /// <see cref="SKU"/>
-        /// </summary>
-        /// <param name="name">The name of the new node</param>
-        /// <param name="organizationId">ID of the organization</param>
-        /// <param name="sku"><see cref="SKU"/> Object representing configuration</param>
-        /// <returns>Returns <see cref="CreatedNode"/> which contains API response and
-        /// <see cref="Node"/></returns>
-        public CreatedNode CreateNode(string name, string organizationId, SKU sku)
-        {
-            var request = new RestRequest("nodes/create", Method.POST)
-            {
-                RequestFormat = DataFormat.Json
-            };
-
-            request.AddParameter("application/json", JsonConvert.SerializeObject(new
-            {
-                name,
-                organizationId,
-                sku = sku.ToString()
-            }), ParameterType.RequestBody);
-
-            ApiConnection.TryRequest(request, out CreatedNode result);
-            return result;
-        }
-
-        /// <summary>
-        /// Reads the nodes associated with the organization, creating a
-        /// <see cref="NodeList"/> for the response
-        /// </summary>
-        /// <param name="organizationId">ID of the organization</param>
-        /// <returns><see cref="NodeList"/> containing Backtest, Research, and Live Nodes</returns>
-        public NodeList ReadNodes(string organizationId)
-        {
-            var request = new RestRequest("nodes/read", Method.POST)
-            {
-                RequestFormat = DataFormat.Json
-            };
-
-            request.AddParameter("application/json", JsonConvert.SerializeObject(new
-            {
-                organizationId,
-            }), ParameterType.RequestBody);
-
-            ApiConnection.TryRequest(request, out NodeList result);
-            return result;
-        }
-
-        /// <summary>
-        /// Update an organizations node with a new name
-        /// </summary>
-        /// <param name="nodeId">The node ID of the node you want to update</param>
-        /// <param name="newName">The new name for that node</param>
-        /// <param name="organizationId">ID of the organization</param>
-        /// <returns><see cref="RestResponse"/> containing success response and errors</returns>
-        public RestResponse UpdateNode(string nodeId, string newName, string organizationId)
-        {
-            var request = new RestRequest("nodes/update", Method.POST)
-            {
-                RequestFormat = DataFormat.Json
-            };
-
-            request.AddParameter("application/json", JsonConvert.SerializeObject(new
-            {
-                nodeId,
-                name = newName,
-                organizationId
-            }), ParameterType.RequestBody);
-
-            ApiConnection.TryRequest(request, out RestResponse result);
-            return result;
-        }
-
-        /// <summary>
-        /// Delete a node from an organization, requires node ID.
-        /// </summary>
-        /// <param name="nodeId">The node ID of the node you want to delete</param>
-        /// <param name="organizationId">ID of the organization</param>
-        /// <returns><see cref="RestResponse"/> containing success response and errors</returns>
-        public RestResponse DeleteNode(string nodeId, string organizationId)
-        {
-            var request = new RestRequest("nodes/delete", Method.POST)
-            {
-                RequestFormat = DataFormat.Json
-            };
-
-            request.AddParameter("application/json", JsonConvert.SerializeObject(new
-            {
-                nodeId,
-                organizationId
-            }), ParameterType.RequestBody);
-
-            ApiConnection.TryRequest(request, out RestResponse result);
-            return result;
-        }
-
-        /// <summary>
-        /// Stop a running node in a organization
-        /// </summary>
-        /// <param name="nodeId">The node ID of the node you want to stop</param>
-        /// <param name="organizationId">ID of the organization</param>
-        /// <returns><see cref="RestResponse"/> containing success response and errors</returns>
-        public RestResponse StopNode(string nodeId, string organizationId)
-        {
-            var request = new RestRequest("nodes/stop", Method.POST)
-            {
-                RequestFormat = DataFormat.Json
-            };
-
-            request.AddParameter("application/json", JsonConvert.SerializeObject(new
-            {
-                nodeId,
-                organizationId
-            }), ParameterType.RequestBody);
-
-            ApiConnection.TryRequest(request, out RestResponse result);
-            return result;
-        }
-
-        /// <summary>
         /// Will read the organization account status
         /// </summary>
         /// <param name="organizationId">The target organization id, if null will return default organization</param>
@@ -1429,6 +1418,25 @@ namespace QuantConnect.Api
             // Trim '/' from start, this can cause issues for _dataFolders without final directory separator in the config
             filePath = filePath.TrimStart('/');
             return filePath;
+        }
+
+        /// <summary>
+        /// Helper method that will execute the given api request and throw an exception if it fails
+        /// </summary>
+        private T MakeRequestOrThrow<T>(RestRequest request, string callerName)
+            where T : RestResponse
+        {
+            if (!ApiConnection.TryRequest(request, out T result))
+            {
+                var errors = string.Empty;
+                if (result != null && result.Errors != null && result.Errors.Count > 0)
+                {
+                    errors = $". Errors: ['{string.Join(",", result.Errors)}']";
+                }
+                throw new WebException($"{callerName} api request failed{errors}");
+            }
+
+            return result;
         }
     }
 }

@@ -40,9 +40,13 @@ namespace QuantConnect.Brokerages
         private long _lastSyncTimeTicks = DateTime.UtcNow.Ticks;
 
         /// <summary>
-        /// Event that fires each time an order is filled
+        /// Event that fires each time the brokerage order id changes
         /// </summary>
-        public event EventHandler<OrderEvent> OrderStatusChanged;
+        public event EventHandler<BrokerageOrderIdChangedEvent> OrderIdChanged;
+
+        /// Event that fires each time the status for a list of orders change
+        /// </summary>
+        public event EventHandler<List<OrderEvent>> OrdersStatusChanged;
 
         /// <summary>
         /// Event that fires each time a short option position is assigned
@@ -53,6 +57,11 @@ namespace QuantConnect.Brokerages
         /// Event that fires each time an option position has changed
         /// </summary>
         public event EventHandler<OptionNotificationEventArgs> OptionNotification;
+
+        /// <summary>
+        /// Event that fires each time there's a brokerage side generated order
+        /// </summary>
+        public event EventHandler<NewBrokerageOrderNotificationEventArgs> NewBrokerageOrderNotification;
 
         /// <summary>
         /// Event that fires each time a delisting occurs
@@ -130,12 +139,37 @@ namespace QuantConnect.Brokerages
         /// <summary>
         /// Event invocator for the OrderFilled event
         /// </summary>
-        /// <param name="e">The OrderEvent</param>
-        protected virtual void OnOrderEvent(OrderEvent e)
+        /// <param name="orderEvents">The list of order events</param>
+        protected virtual void OnOrderEvents(List<OrderEvent> orderEvents)
         {
             try
             {
-                OrderStatusChanged?.Invoke(this, e);
+                OrdersStatusChanged?.Invoke(this, orderEvents);
+            }
+            catch (Exception err)
+            {
+                Log.Error(err);
+            }
+        }
+
+        /// <summary>
+        /// Event invocator for the OrderFilled event
+        /// </summary>
+        /// <param name="e">The order event</param>
+        protected virtual void OnOrderEvent(OrderEvent e)
+        {
+            OnOrderEvents(new List<OrderEvent> { e });
+        }
+
+        /// <summary>
+        /// Event invocator for the OrderIdChanged event
+        /// </summary>
+        /// <param name="e">The BrokerageOrderIdChangedEvent</param>
+        protected virtual void OnOrderIdChangedEvent(BrokerageOrderIdChangedEvent e)
+        {
+            try
+            {
+                OrderIdChanged?.Invoke(this, e);
             }
             catch (Exception err)
             {
@@ -172,6 +206,24 @@ namespace QuantConnect.Brokerages
                 Log.Debug("Brokerage.OnOptionNotification(): " + e);
 
                 OptionNotification?.Invoke(this, e);
+            }
+            catch (Exception err)
+            {
+                Log.Error(err);
+            }
+        }
+
+        /// <summary>
+        /// Event invocator for the NewBrokerageOrderNotification event
+        /// </summary>
+        /// <param name="e">The NewBrokerageOrderNotification event arguments</param>
+        protected virtual void OnNewBrokerageOrderNotification(NewBrokerageOrderNotificationEventArgs e)
+        {
+            try
+            {
+                Log.Debug("Brokerage.OnNewBrokerageOrderNotification(): " + e);
+
+                NewBrokerageOrderNotification?.Invoke(this, e);
             }
             catch (Exception err)
             {

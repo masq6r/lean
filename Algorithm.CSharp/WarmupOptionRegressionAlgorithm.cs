@@ -27,9 +27,10 @@ namespace QuantConnect.Algorithm.CSharp
     /// </summary>
     public class WarmupOptionRegressionAlgorithm : QCAlgorithm, IRegressionAlgorithmDefinition
     {
-        private List<DateTime> _optionWarmupTimes = new();
         private const string UnderlyingTicker = "GOOG";
         private Symbol _optionSymbol;
+
+        protected List<DateTime> OptionWarmupTimes { get; } = new();
 
         public override void Initialize()
         {
@@ -41,7 +42,7 @@ namespace QuantConnect.Algorithm.CSharp
             _optionSymbol = option.Symbol;
 
             option.SetFilter(u => u.Strikes(-5, +5).Expiration(0, 180).IncludeWeeklys());
-            SetWarmUp(1, Resolution.Daily);
+            SetWarmUp(TimeSpan.FromDays(1));
         }
 
         /// <summary>
@@ -61,13 +62,16 @@ namespace QuantConnect.Algorithm.CSharp
 
                 if (atmContract != null)
                 {
-                    if (IsWarmingUp)
+                    // during warmup, using daily resolution (with the same TZ as the algorithm) the last bar.EndTime of warmup
+                    // overlaps with the algorithm start time, considered not to be in warmup anymore.
+                    // This bar would also be emitted by lean if no warmup was set and daily resolution used, see 'BasicTemplateDailyAlgorithm'
+                    if (Time <= StartDate)
                     {
                         if(atmContract.LastPrice == 0)
                         {
                             throw new Exception("Contract price is not set!");
                         }
-                        _optionWarmupTimes.Add(Time);
+                        OptionWarmupTimes.Add(Time);
                     }
                     else if (!Portfolio.Invested && IsMarketOpen(_optionSymbol))
                     {
@@ -86,9 +90,9 @@ namespace QuantConnect.Algorithm.CSharp
             var count = 0;
             do
             {
-                if (_optionWarmupTimes[count] != start)
+                if (OptionWarmupTimes[count] != start)
                 {
-                    throw new Exception($"Unexpected time {_optionWarmupTimes[count]} expected {start}");
+                    throw new Exception($"Unexpected time {OptionWarmupTimes[count]} expected {start}");
                 }
                 count++;
                 start = start.AddMinutes(1);
@@ -109,7 +113,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 1111660;
+        public virtual long DataPoints => 630923;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -119,7 +123,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
-        public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
+        public virtual Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
             {"Total Trades", "2"},
             {"Average Win", "0%"},
@@ -143,26 +147,8 @@ namespace QuantConnect.Algorithm.CSharp
             {"Total Fees", "$2.00"},
             {"Estimated Strategy Capacity", "$1300000.00"},
             {"Lowest Capacity Asset", "GOOCV 30AKMEIPOSS1Y|GOOCV VP83T1ZUHROL"},
-            {"Fitness Score", "0"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "79228162514264337593543950335"},
-            {"Return Over Maximum Drawdown", "79228162514264337593543950335"},
-            {"Portfolio Turnover", "0"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "9d9f9248ee8fe30d87ff0a6f6fea5112"}
+            {"Portfolio Turnover", "10.71%"},
+            {"OrderListHash", "838e313ba57850227ec810ed8fb85a23"}
         };
     }
 }

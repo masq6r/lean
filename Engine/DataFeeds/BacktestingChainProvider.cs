@@ -29,6 +29,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
     {
         // see https://github.com/QuantConnect/Lean/issues/6384
         private static readonly TickType[] DataTypes = new[] { TickType.Quote, TickType.OpenInterest, TickType.Trade };
+        private static readonly Resolution[] Resolutions = new[] { Resolution.Minute, Resolution.Hour, Resolution.Daily };
         private bool _loggedPreviousTradableDate;
 
         /// <summary>
@@ -52,19 +53,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         protected IEnumerable<Symbol> GetSymbols(Symbol canonicalSymbol, DateTime date)
         {
             IEnumerable<string> entries = null;
-            foreach (var tickType in DataTypes)
+            var usedResolution = Resolution.Minute;
+            foreach (var resolution in Resolutions)
             {
-                // build the zip file name and fetch it with our provider
-                var zipFileName = LeanData.GenerateZipFilePath(Globals.DataFolder, canonicalSymbol, date, Resolution.Minute, tickType);
-                try
-                {
-                    entries = DataCacheProvider.GetZipEntries(zipFileName);
-                }
-                catch
-                {
-                    // the cache provider will throw if the file isn't available TODO: it's api should be more like TryGetZipEntries
-                }
-
+                usedResolution = resolution;
+                entries = GetZipEntries(canonicalSymbol, date, usedResolution);
                 if (entries != null)
                 {
                     break;
@@ -79,14 +72,14 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     if (!_loggedPreviousTradableDate)
                     {
                         _loggedPreviousTradableDate = true;
-                        Log.Trace($"BacktestingCacheProvider.GetSymbols(): {date} is not a tradable date for {canonicalSymbol}. When requesting contracts " +
+                        Log.Trace($"BacktestingCacheProvider.GetSymbols(): {date} is not a tradable date for {canonicalSymbol}. When requesting contracts" +
                             $" for non tradable dates, will return contracts of previous tradable date.");
                     }
 
                     // be user friendly, will return contracts from the previous tradable date
-                    foreach (var symbols in GetSymbols(canonicalSymbol, Time.GetStartTimeForTradeBars(entry.ExchangeHours, date, Time.OneDay, 1, false, entry.DataTimeZone)))
+                    foreach (var symbol in GetSymbols(canonicalSymbol, Time.GetStartTimeForTradeBars(entry.ExchangeHours, date, Time.OneDay, 1, false, entry.DataTimeZone)))
                     {
-                        yield return symbols;
+                        yield return symbol;
                     }
                     yield break;
                 }
@@ -101,8 +94,40 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             // generate and return the contract symbol for each zip entry
             foreach (var zipEntryName in entries)
             {
-                yield return LeanData.ReadSymbolFromZipEntry(canonicalSymbol, Resolution.Minute, zipEntryName);
+                var symbol = LeanData.ReadSymbolFromZipEntry(canonicalSymbol, usedResolution, zipEntryName);
+                // do not return expired contracts, because we are potentially sourcing this information from daily/hour files we could pick up already expired contracts
+                if (!IsContractExpired(symbol, date))
+                {
+                    yield return symbol;
+                }
             }
+        }
+
+        /// <summary>
+        /// Helper method to determine if a contract is expired for the requested date
+        /// </summary>
+        protected static bool IsContractExpired(Symbol symbol, DateTime date)
+        {
+            return symbol.ID.Date.Date < date.Date;
+        }
+
+        private IEnumerable<string> GetZipEntries(Symbol canonicalSymbol, DateTime date, Resolution resolution)
+        {
+            foreach (var tickType in DataTypes)
+            {
+                // build the zip file name and fetch it with our provider
+                var zipFileName = LeanData.GenerateZipFilePath(Globals.DataFolder, canonicalSymbol, date, resolution, tickType);
+                try
+                {
+                    return DataCacheProvider.GetZipEntries(zipFileName);
+                }
+                catch
+                {
+                    // the cache provider will throw if the file isn't available TODO: it's api should be more like TryGetZipEntries
+                }
+            }
+
+            return null;
         }
     }
 }

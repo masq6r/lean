@@ -44,7 +44,7 @@ namespace QuantConnect
         /// </summary>
         /// <param name="utcDateTime">The current time in UTC</param>
         /// <param name="timeZone">The time zone</param>
-        internal LocalTimeKeeper(DateTime utcDateTime, DateTimeZone timeZone)
+        public LocalTimeKeeper(DateTime utcDateTime, DateTimeZone timeZone)
         {
             TimeZone = timeZone;
             LocalTime = utcDateTime.ConvertTo(DateTimeZone.Utc, TimeZone);
@@ -54,7 +54,7 @@ namespace QuantConnect
         /// Updates the current time of this time keeper
         /// </summary>
         /// <param name="utcDateTime">The current time in UTC</param>
-        internal void UpdateTime(DateTime utcDateTime)
+        public void UpdateTime(DateTime utcDateTime)
         {
             LocalTime = utcDateTime.ConvertTo(DateTimeZone.Utc, TimeZone);
             TimeUpdated?.Invoke(this, new TimeUpdatedEventArgs(LocalTime, TimeZone));

@@ -163,7 +163,8 @@ namespace QuantConnect.Research
                     symbolPropertiesDataBase,
                     this,
                     registeredTypes,
-                    new SecurityCacheProvider(Portfolio));
+                    new SecurityCacheProvider(Portfolio),
+                    algorithm: this);
                 Securities.SetSecurityService(securityService);
                 SubscriptionManager.SetDataManager(
                     new DataManager(new NullDataFeed(),
@@ -193,6 +194,9 @@ namespace QuantConnect.Research
 
                 SetOptionChainProvider(new CachingOptionChainProvider(new BacktestingOptionChainProvider(_dataCacheProvider, mapFileProvider)));
                 SetFutureChainProvider(new CachingFutureChainProvider(new BacktestingFutureChainProvider(_dataCacheProvider)));
+
+                SetAlgorithmMode(AlgorithmMode.Research);
+                SetDeploymentTarget(Config.GetValue("deployment-target", DeploymentTarget.LocalPlatform));
             }
             catch (Exception exception)
             {
@@ -400,7 +404,7 @@ namespace QuantConnect.Research
                     .SelectMany(x =>
                     {
                         // the option chain symbols wont change so we can set 'exchangeDateChange' to false always
-                        optionFilterUniverse.Refresh(distinctSymbols, x, exchangeDateChange:false);
+                        optionFilterUniverse.Refresh(distinctSymbols, x, x.EndTime);
                         return option.ContractFilter.Filter(optionFilterUniverse);
                     })
                     .Distinct().Concat(new[] { symbol.Underlying });
@@ -442,10 +446,9 @@ namespace QuantConnect.Research
                 {
                     if (future.Exchange.DateIsOpen(date))
                     {
-                        var underlying = new Tick { Time = date };
                         var allList = FutureChainProvider.GetFutureContractList(future.Symbol, date);
 
-                        allSymbols.UnionWith(future.ContractFilter.Filter(new FutureFilterUniverse(allList, underlying)));
+                        allSymbols.UnionWith(future.ContractFilter.Filter(new FutureFilterUniverse(allList, date)));
                     }
                 }
             }
@@ -863,7 +866,7 @@ namespace QuantConnect.Research
             var name = indicator.GetType().Name;
 
             var properties = indicator.GetType().GetProperties()
-                .Where(x => x.PropertyType.IsGenericType && x.Name != "Consolidators")
+                .Where(x => x.PropertyType.IsGenericType && x.Name != "Consolidators" && x.Name != "Window")
                 .ToDictionary(x => x.Name, y => new List<IndicatorDataPoint>());
             properties.Add(name, new List<IndicatorDataPoint>());
 

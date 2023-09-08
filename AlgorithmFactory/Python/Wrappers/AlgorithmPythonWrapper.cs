@@ -35,6 +35,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using QuantConnect.Storage;
 using QuantConnect.Algorithm.Framework.Alphas.Analysis;
+using QuantConnect.Statistics;
 
 namespace QuantConnect.AlgorithmFactory.Python.Wrappers
 {
@@ -182,6 +183,11 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         public IBrokerageModel BrokerageModel => _baseAlgorithm.BrokerageModel;
 
         /// <summary>
+        /// Gets the brokerage name.
+        /// </summary>
+        public BrokerageName BrokerageName => _baseAlgorithm.BrokerageName;
+
+        /// <summary>
         /// Debug messages from the strategy:
         /// </summary>
         public ConcurrentQueue<string> DebugMessages => _baseAlgorithm.DebugMessages;
@@ -221,6 +227,16 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         /// Algorithm is running on a live server.
         /// </summary>
         public bool LiveMode => _baseAlgorithm.LiveMode;
+
+        /// <summary>
+        /// Algorithm running mode.
+        /// </summary>
+        public AlgorithmMode AlgorithmMode => _baseAlgorithm.AlgorithmMode;
+
+        /// <summary>
+        /// Deployment target, either local or cloud.
+        /// </summary>
+        public DeploymentTarget DeploymentTarget => _baseAlgorithm.DeploymentTarget;
 
         /// <summary>
         /// Log messages from the strategy:
@@ -452,6 +468,17 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         public InsightManager Insights => _baseAlgorithm.Insights;
 
         /// <summary>
+        /// Sets the statistics service instance to be used by the algorithm
+        /// </summary>
+        /// <param name="statisticsService">The statistics service instance</param>
+        public void SetStatisticsService(IStatisticsService statisticsService) => _baseAlgorithm.SetStatisticsService(statisticsService);
+
+        /// <summary>
+        /// The current statistics for the running algorithm.
+        /// </summary>
+        public StatisticsResults Statistics => _baseAlgorithm.Statistics;
+
+        /// <summary>
         /// Set a required SecurityType-symbol and resolution for algorithm
         /// </summary>
         /// <param name="securityType">SecurityType Enum: Equity, Commodity, FOREX or Future</param>
@@ -466,6 +493,24 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         public Security AddSecurity(SecurityType securityType, string symbol, Resolution? resolution, string market, bool fillForward, decimal leverage, bool extendedMarketHours,
             DataMappingMode? dataMappingMode = null, DataNormalizationMode? dataNormalizationMode = null)
             => _baseAlgorithm.AddSecurity(securityType, symbol, resolution, market, fillForward, leverage, extendedMarketHours, dataMappingMode, dataNormalizationMode);
+
+
+        /// <summary>
+        /// Set a required SecurityType-symbol and resolution for algorithm
+        /// </summary>
+        /// <param name="symbol">The security Symbol</param>
+        /// <param name="resolution">Resolution of the MarketType required: MarketData, Second or Minute</param>
+        /// <param name="fillForward">If true, returns the last available data even if none in that timeslice.</param>
+        /// <param name="leverage">leverage for this security</param>
+        /// <param name="extendedMarketHours">Use extended market hours data</param>
+        /// <param name="dataMappingMode">The contract mapping mode to use for the security</param>
+        /// <param name="dataNormalizationMode">The price scaling mode to use for the security</param>
+        /// <param name="contractDepthOffset">The continuous contract desired offset from the current front month.
+        /// For example, 0 (default) will use the front month, 1 will use the back month contract</param>
+        /// <returns>The new Security that was added to the algorithm</returns>
+        public Security AddSecurity(Symbol symbol, Resolution? resolution = null, bool fillForward = true, decimal leverage = Security.NullLeverage, bool extendedMarketHours = false,
+            DataMappingMode? dataMappingMode = null, DataNormalizationMode? dataNormalizationMode = null, int contractDepthOffset = 0)
+            => _baseAlgorithm.AddSecurity(symbol, resolution, fillForward, leverage, extendedMarketHours, dataMappingMode, dataNormalizationMode, contractDepthOffset);
 
         /// <summary>
         /// Creates and adds a new single <see cref="Future"/> contract to the algorithm
@@ -962,6 +1007,18 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         /// </summary>
         /// <param name="live">Bool live mode flag</param>
         public void SetLiveMode(bool live) => _baseAlgorithm.SetLiveMode(live);
+
+        /// <summary>
+        /// Sets the algorithm running mode
+        /// </summary>
+        /// <param name="algorithmMode">Algorithm mode</param>
+        public void SetAlgorithmMode(AlgorithmMode algorithmMode) => _baseAlgorithm.SetAlgorithmMode(algorithmMode);
+
+        /// <summary>
+        /// Sets the algorithm deployment target
+        /// </summary>
+        /// <param name="deploymentTarget">Deployment target</param>
+        public void SetDeploymentTarget(DeploymentTarget deploymentTarget) => _baseAlgorithm.SetDeploymentTarget(deploymentTarget);
 
         /// <summary>
         /// Set the algorithm as initialized and locked. No more cash or security changes.

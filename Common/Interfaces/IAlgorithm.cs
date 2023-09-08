@@ -30,6 +30,7 @@ using QuantConnect.Securities.Option;
 using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Algorithm.Framework.Alphas;
 using QuantConnect.Algorithm.Framework.Alphas.Analysis;
+using QuantConnect.Statistics;
 
 namespace QuantConnect.Interfaces
 {
@@ -119,6 +120,14 @@ namespace QuantConnect.Interfaces
         /// Gets the brokerage model used to emulate a real brokerage
         /// </summary>
         IBrokerageModel BrokerageModel
+        {
+            get;
+        }
+
+        /// <summary>
+        /// Gets the brokerage name.
+        /// </summary>
+        BrokerageName BrokerageName
         {
             get;
         }
@@ -242,6 +251,22 @@ namespace QuantConnect.Interfaces
         }
 
         /// <summary>
+        /// Algorithm running mode.
+        /// </summary>
+        AlgorithmMode AlgorithmMode
+        {
+            get;
+        }
+
+        /// <summary>
+        /// Deployment target, either local or cloud.
+        /// </summary>
+        DeploymentTarget DeploymentTarget
+        {
+            get;
+        }
+
+        /// <summary>
         /// Gets the subscription settings to be used when adding securities via universe selection
         /// </summary>
         UniverseSettings UniverseSettings
@@ -286,6 +311,14 @@ namespace QuantConnect.Interfaces
         /// Customizable dynamic statistics displayed during live trading:
         /// </summary>
         ConcurrentDictionary<string, string> RuntimeStatistics
+        {
+            get;
+        }
+
+        /// <summary>
+        /// The current algorithm statistics for the running algorithm.
+        /// </summary>
+        StatisticsResults Statistics
         {
             get;
         }
@@ -607,6 +640,22 @@ namespace QuantConnect.Interfaces
             DataMappingMode? dataMappingMode = null, DataNormalizationMode? dataNormalizationMode = null);
 
         /// <summary>
+        /// Set a required SecurityType-symbol and resolution for algorithm
+        /// </summary>
+        /// <param name="symbol">The security Symbol</param>
+        /// <param name="resolution">Resolution of the MarketType required: MarketData, Second or Minute</param>
+        /// <param name="fillForward">If true, returns the last available data even if none in that timeslice.</param>
+        /// <param name="leverage">leverage for this security</param>
+        /// <param name="extendedMarketHours">Use extended market hours data</param>
+        /// <param name="dataMappingMode">The contract mapping mode to use for the security</param>
+        /// <param name="dataNormalizationMode">The price scaling mode to use for the security</param>
+        /// <param name="contractDepthOffset">The continuous contract desired offset from the current front month.
+        /// For example, 0 (default) will use the front month, 1 will use the back month contract</param>
+        /// <returns>The new Security that was added to the algorithm</returns>
+        Security AddSecurity(Symbol symbol, Resolution? resolution = null, bool fillForward = true, decimal leverage = Security.NullLeverage, bool extendedMarketHours = false,
+            DataMappingMode? dataMappingMode = null, DataNormalizationMode? dataNormalizationMode = null, int contractDepthOffset = 0);
+
+        /// <summary>
         /// Creates and adds a new single <see cref="Future"/> contract to the algorithm
         /// </summary>
         /// <param name="symbol">The futures contract symbol</param>
@@ -672,6 +721,18 @@ namespace QuantConnect.Interfaces
         /// </summary>
         /// <param name="live">Bool live mode flag</param>
         void SetLiveMode(bool live);
+
+        /// <summary>
+        /// Sets the algorithm running mode
+        /// </summary>
+        /// <param name="algorithmMode">Algorithm mode</param>
+        void SetAlgorithmMode(AlgorithmMode algorithmMode);
+
+        /// <summary>
+        /// Sets the algorithm deployment target
+        /// </summary>
+        /// <param name="deploymentTarget">Deployment target</param>
+        void SetDeploymentTarget(DeploymentTarget deploymentTarget);
 
         /// <summary>
         /// Sets <see cref="IsWarmingUp"/> to false to indicate this algorithm has finished its warm up
@@ -770,5 +831,11 @@ namespace QuantConnect.Interfaces
         /// <param name="symbol">The symbol to get the ticker for</param>
         /// <returns>The mapped ticker for a symbol</returns>
         string Ticker(Symbol symbol);
+
+        /// <summary>
+        /// Sets the statistics service instance to be used by the algorithm
+        /// </summary>
+        /// <param name="statisticsService">The statistics service instance</param>
+        void SetStatisticsService(IStatisticsService statisticsService);
     }
 }

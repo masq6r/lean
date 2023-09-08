@@ -77,6 +77,7 @@ namespace QuantConnect.Algorithm
         const string SecuritiesAndPortfolio = "Securities and Portfolio";
         const string TradingAndOrders = "Trading and Orders";
         const string Universes = "Universes";
+        const string StatisticsTag = "Statistics";
         #endregion
 
         private readonly TimeKeeper _timeKeeper;
@@ -87,10 +88,14 @@ namespace QuantConnect.Algorithm
         private DateTime _endDate;     //Default end to yesterday
         private bool _locked;
         private bool _liveMode;
+        private AlgorithmMode _algorithmMode;
+        private DeploymentTarget _deploymentTarget;
         private string _algorithmId = "";
         private ConcurrentQueue<string> _debugMessages = new ConcurrentQueue<string>();
         private ConcurrentQueue<string> _logMessages = new ConcurrentQueue<string>();
         private ConcurrentQueue<string> _errorMessages = new ConcurrentQueue<string>();
+        private IStatisticsService _statisticsService;
+        private IBrokerageModel _brokerageModel;
 
         //Error tracking to avoid message flooding:
         private string _previousDebugMessage = "";
@@ -148,6 +153,12 @@ namespace QuantConnect.Algorithm
             //Initialise End Date:
             SetEndDate(DateTime.UtcNow.ConvertFromUtc(TimeZone));
 
+            // Set default algorithm mode as backtesting
+            _algorithmMode = AlgorithmMode.Backtesting;
+
+            // Set default deployment target as local
+            _deploymentTarget = DeploymentTarget.LocalPlatform;
+
             _securityDefinitionSymbolResolver = SecurityDefinitionSymbolResolver.GetInstance();
 
             Settings = new AlgorithmSettings();
@@ -180,9 +191,9 @@ namespace QuantConnect.Algorithm
             Schedule = new ScheduleManager(Securities, TimeZone);
 
             // initialize the trade builder
-            TradeBuilder = new TradeBuilder(FillGroupingMethod.FillToFill, FillMatchingMethod.FIFO);
+            SetTradeBuilder(new TradeBuilder(FillGroupingMethod.FillToFill, FillMatchingMethod.FIFO));
 
-            SecurityInitializer = new BrokerageModelSecurityInitializer(new DefaultBrokerageModel(AccountType.Margin), SecuritySeeder.Null);
+            SecurityInitializer = new BrokerageModelSecurityInitializer(BrokerageModel, SecuritySeeder.Null);
 
             CandlestickPatterns = new CandlestickPatterns(this);
 
@@ -284,6 +295,31 @@ namespace QuantConnect.Algorithm
         /// </summary>
         [DocumentationAttribute(Modeling)]
         public IBrokerageModel BrokerageModel
+        {
+            get
+            {
+                return _brokerageModel;
+            }
+            private set
+            {
+                _brokerageModel = value;
+                try
+                {
+                    BrokerageName = Brokerages.BrokerageModel.GetBrokerageName(_brokerageModel);
+                }
+                catch (ArgumentOutOfRangeException)
+                {
+                    // The brokerage model might be a custom one which has not a corresponding BrokerageName
+                    BrokerageName = BrokerageName.Default;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gets the brokerage name.
+        /// </summary>
+        [DocumentationAttribute(Modeling)]
+        public BrokerageName BrokerageName
         {
             get;
             private set;
@@ -506,6 +542,28 @@ namespace QuantConnect.Algorithm
         }
 
         /// <summary>
+        /// Algorithm running mode.
+        /// </summary>
+        public AlgorithmMode AlgorithmMode
+        {
+            get
+            {
+                return _algorithmMode;
+            }
+        }
+
+        /// <summary>
+        /// Deployment target, either local or cloud.
+        /// </summary>
+        public DeploymentTarget DeploymentTarget
+        {
+            get
+            {
+                return _deploymentTarget;
+            }
+        }
+
+        /// <summary>
         /// Storage for debugging messages before the event handler has passed control back to the Lean Engine.
         /// </summary>
         /// <seealso cref="Debug(string)"/>
@@ -575,6 +633,18 @@ namespace QuantConnect.Algorithm
         [DocumentationAttribute(HandlingData)]
         [DocumentationAttribute(MachineLearning)]
         public ObjectStore ObjectStore { get; private set; }
+
+        /// <summary>
+        /// The current statistics for the running algorithm.
+        /// </summary>
+        [DocumentationAttribute(StatisticsTag)]
+        public StatisticsResults Statistics
+        {
+            get
+            {
+                return _statisticsService?.StatisticsResults() ?? new StatisticsResults();
+            }
+        }
 
         /// <summary>
         /// Initialise the data and resolution required, as well as the cash and start-end dates for your algorithm. All algorithms must initialized.
@@ -1125,7 +1195,7 @@ namespace QuantConnect.Algorithm
                 throw new InvalidOperationException("Algorithm.SetTimeZone(): Cannot change time zone after algorithm running.");
             }
 
-            if (timeZone == null) throw new ArgumentNullException("timeZone");
+            if (timeZone == null) throw new ArgumentNullException(nameof(timeZone));
             _timeKeeper.AddTimeZone(timeZone);
             _localTimeKeeper = _timeKeeper.GetLocalTimeKeeper(timeZone);
 
@@ -1580,7 +1650,33 @@ namespace QuantConnect.Algorithm
                 if (live)
                 {
                     SetLiveModeStartDate();
+                    _algorithmMode = AlgorithmMode.Live;
                 }
+            }
+        }
+
+        /// <summary>
+        /// Sets the algorithm running mode
+        /// </summary>
+        /// <param name="algorithmMode">Algorithm mode</param>
+        public void SetAlgorithmMode(AlgorithmMode algorithmMode)
+        {
+            if (!_locked)
+            {
+                _algorithmMode = algorithmMode;
+                SetLiveMode(_algorithmMode == AlgorithmMode.Live);
+            }
+        }
+
+        /// <summary>
+        /// Sets the algorithm deployment target
+        /// </summary>
+        /// <param name="deploymentTarget">Deployment target</param>
+        public void SetDeploymentTarget(DeploymentTarget deploymentTarget)
+        {
+            if (!_locked)
+            {
+                _deploymentTarget = deploymentTarget;
             }
         }
 
@@ -1592,6 +1688,7 @@ namespace QuantConnect.Algorithm
         {
             TradeBuilder = tradeBuilder;
             TradeBuilder.SetLiveMode(LiveMode);
+            TradeBuilder.SetSecurityManager(Securities);
         }
 
         /// <summary>
@@ -1750,7 +1847,7 @@ namespace QuantConnect.Algorithm
 
                 // add this security to the user defined universe
                 Universe universe;
-                if (!UniverseManager.TryGetValue(symbol, out universe) && !IsAlreadyPending(symbol))
+                if (!UniverseManager.ContainsKey(symbol))
                 {
                     var canonicalConfig = configs.First();
                     var settings = new UniverseSettings(canonicalConfig.Resolution, leverage, fillForward, extendedMarketHours, UniverseSettings.MinimumTimeInUniverse);
@@ -2130,11 +2227,7 @@ namespace QuantConnect.Algorithm
                     Resolution = underlyingConfigs.GetHighestResolution(),
                     ExtendedMarketHours = extendedMarketHours
                 };
-                lock (_pendingUniverseAdditionsLock)
-                {
-                    universe = _pendingUniverseAdditions.FirstOrDefault(u => u.Configuration.Symbol == universeSymbol)
-                               ?? AddUniverse(new OptionContractUniverse(new SubscriptionDataConfig(configs.First(), symbol: universeSymbol), settings));
-                }
+                universe = AddUniverse(new OptionContractUniverse(new SubscriptionDataConfig(configs.First(), symbol: universeSymbol), settings));
             }
 
             // update the universe
@@ -2299,7 +2392,7 @@ namespace QuantConnect.Algorithm
 
                     // finally, dispose and remove the canonical security from the universe manager
                     UniverseManager.Remove(kvp.Key);
-                    _userAddedUniverses.Remove(kvp.Key);
+                    _universeSelectionUniverses.Remove(security.Symbol);
                 }
             }
             else
@@ -2308,9 +2401,7 @@ namespace QuantConnect.Algorithm
                 {
                     // we need to handle existing universes and pending to be added universes, that will be pushed
                     // at the end of this time step see OnEndOfTimeStep()
-                    foreach (var universe in UniverseManager.Select(x => x.Value)
-                        .Concat(_pendingUniverseAdditions)
-                        .OfType<UserDefinedUniverse>())
+                    foreach (var universe in UniverseManager.Select(x => x.Value).OfType<UserDefinedUniverse>())
                     {
                         universe.Remove(symbol);
                     }
@@ -3074,13 +3165,14 @@ namespace QuantConnect.Algorithm
         }
 
         /// <summary>
-        /// Check if a symbol is already pending to be added
+        /// Sets the statistics service instance to be used by the algorithm
         /// </summary>
-        private bool IsAlreadyPending(Symbol symbol)
+        /// <param name="statisticsService">The statistics service instance</param>
+        public void SetStatisticsService(IStatisticsService statisticsService)
         {
-            lock (_pendingUniverseAdditionsLock)
+            if (_statisticsService == null)
             {
-                return _pendingUniverseAdditions.Any(u => u.Configuration.Symbol == symbol);
+                _statisticsService = statisticsService;
             }
         }
     }

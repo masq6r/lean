@@ -696,7 +696,16 @@ namespace QuantConnect.Securities
             var security = Securities[symbol];
 
             var positionGroup = Positions.GetOrCreateDefaultGroup(security);
-            var parameters = new PositionGroupBuyingPowerParameters(this, positionGroup, direction);
+            // Order direction in GetPositionGroupBuyingPower is regarding buying or selling the position group sent as parameter.
+            // Since we are passing the same position group as the one in the holdings, we need to invert the direction.
+            // Buying the means increasing the position group (in the same direction it is currently held) and selling means decreasing it.
+            var positionGroupOrderDirection = direction;
+            if (security.Holdings.IsShort)
+            {
+                positionGroupOrderDirection = direction == OrderDirection.Buy ? OrderDirection.Sell : OrderDirection.Buy;
+            }
+
+            var parameters = new PositionGroupBuyingPowerParameters(this, positionGroup, positionGroupOrderDirection);
             return positionGroup.BuyingPowerModel.GetPositionGroupBuyingPower(parameters);
         }
 
@@ -837,9 +846,13 @@ namespace QuantConnect.Securities
         /// </summary>
         /// <param name="time">Time of order processed </param>
         /// <param name="transactionProfitLoss">Profit Loss.</param>
-        public void AddTransactionRecord(DateTime time, decimal transactionProfitLoss)
+        /// <param name="isWin">
+        /// Whether the transaction is a win.
+        /// For options exercise, this might not depend only on the profit/loss value
+        /// </param>
+        public void AddTransactionRecord(DateTime time, decimal transactionProfitLoss, bool isWin)
         {
-            Transactions.AddTransactionRecord(time, transactionProfitLoss);
+            Transactions.AddTransactionRecord(time, transactionProfitLoss, isWin);
         }
 
         /// <summary>

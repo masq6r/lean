@@ -358,6 +358,43 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
         }
 
         [Test]
+        public void TrailingStopOrderPriceIsRounded([Values] bool trailingAsPercentage)
+        {
+            //Initialize the transaction handler
+            var transactionHandler = new TestBrokerageTransactionHandler();
+            using var brokerage = new BacktestingBrokerage(_algorithm);
+            transactionHandler.Initialize(_algorithm, brokerage, new BacktestingResultHandler());
+
+            // Create the order
+            _algorithm.SetBrokerageModel(new DefaultBrokerageModel());
+            var security = _algorithm.AddEquity("SPY");
+            security.PriceVariationModel = new EquityPriceVariationModel();
+            var price = 330.12129m;
+            security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
+            var orderRequest = new SubmitOrderRequest(OrderType.TrailingStop, security.Type, security.Symbol, 100, stopPrice: 300.12121212m, 0, 0,
+                trailingAmount: 20.12121212m, trailingAsPercentage, DateTime.Now, "");
+
+            // Mock the order processor
+            var orderProcessorMock = new Mock<IOrderProcessor>();
+            orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
+            _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
+
+            // Act
+            var orderTicket = transactionHandler.Process(orderRequest);
+            Assert.IsTrue(orderTicket.Status == OrderStatus.New);
+            transactionHandler.HandleOrderRequest(orderRequest);
+
+            // Assert
+            Assert.IsTrue(orderRequest.Response.IsProcessed);
+            Assert.IsTrue(orderRequest.Response.IsSuccess);
+            Assert.IsTrue(orderTicket.Status == OrderStatus.Submitted);
+            // 300.12121212 after round becomes 300.12
+            Assert.AreEqual(300.12m, orderTicket.Get(OrderField.StopPrice));
+            // If trailing amount is not a price, it's not rounded
+            Assert.AreEqual(trailingAsPercentage ? 20.12121212m : 20.12, orderTicket.Get(OrderField.TrailingAmount));
+        }
+
+        [Test]
         public void OrderCancellationTransitionsThroughCancelPendingStatus()
         {
             // Initializes the transaction handler
@@ -504,6 +541,96 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             var actual = transactionHandler.RoundOffOrder(order, security);
 
             Assert.AreEqual(0, actual);
+        }
+
+        [Test]
+        public void InvalidUpdateOrderRequestShouldNotInvalidateCanceledOrder()
+        {
+            var transactionHandler = new TestBrokerageTransactionHandler();
+            using var brokerage = new NoSubmitTestBrokerage(_algorithm);
+            transactionHandler.Initialize(_algorithm, brokerage, new BacktestingResultHandler());
+
+            var security = _algorithm.Securities[_symbol];
+            var price = 1.12m;
+            security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
+            var orderRequest = new SubmitOrderRequest(OrderType.Limit, security.Type, security.Symbol, 1000, 0, 1.11m, DateTime.Now, "");
+
+            _algorithm.Transactions.SetOrderProcessor(transactionHandler);
+
+            var orderTicket = transactionHandler.Process(orderRequest);
+            transactionHandler.HandleOrderRequest(orderRequest);
+            Assert.IsTrue(orderRequest.Response.IsProcessed);
+            Assert.IsTrue(orderRequest.Response.IsSuccess);
+
+            brokerage.PublishOrderEvent(new OrderEvent(_algorithm.Transactions.GetOrders().Single(), _algorithm.UtcTime, OrderFee.Zero)
+            { Status = OrderStatus.Submitted });
+            Assert.AreEqual(OrderStatus.Submitted, orderTicket.Status);
+
+            var updateRequest = new UpdateOrderRequest(DateTime.Now, orderTicket.OrderId, new UpdateOrderFields() { Quantity = 10000 });
+            var updateTicket = transactionHandler.Process(updateRequest);
+            transactionHandler.HandleOrderRequest(updateRequest);
+            Assert.AreEqual(OrderRequestStatus.Processed, updateRequest.Status);
+            Assert.IsTrue(updateRequest.Response.IsSuccess);
+
+            // Canceled!
+            brokerage.PublishOrderEvent(new OrderEvent(_algorithm.Transactions.GetOrders().Single(), _algorithm.UtcTime, OrderFee.Zero)
+            { Status = OrderStatus.Canceled });
+
+            Assert.AreEqual(OrderStatus.Canceled, orderTicket.Status);
+
+            // update failed!
+            brokerage.PublishOrderEvent(new OrderEvent(_algorithm.Transactions.GetOrders().Single(), _algorithm.UtcTime, OrderFee.Zero)
+            { Status = OrderStatus.Invalid });
+
+            // nothing should change
+            Assert.AreEqual(OrderStatus.Canceled, orderTicket.Status);
+        }
+
+        [Test]
+        public void InvalidUpdateOrderRequestShouldNotInvalidateFilledOrder()
+        {
+            var transactionHandler = new TestBrokerageTransactionHandler();
+            using var brokerage = new NoSubmitTestBrokerage(_algorithm);
+            transactionHandler.Initialize(_algorithm, brokerage, new BacktestingResultHandler());
+
+            var security = _algorithm.Securities[_symbol];
+            var price = 1.12m;
+            security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
+            var orderRequest = new SubmitOrderRequest(OrderType.Limit, security.Type, security.Symbol, 1000, 0, 1.11m, DateTime.Now, "");
+
+            _algorithm.Transactions.SetOrderProcessor(transactionHandler);
+
+            var orderTicket = transactionHandler.Process(orderRequest);
+            transactionHandler.HandleOrderRequest(orderRequest);
+            Assert.IsTrue(orderRequest.Response.IsProcessed);
+            Assert.IsTrue(orderRequest.Response.IsSuccess);
+
+            brokerage.PublishOrderEvent(new OrderEvent(_algorithm.Transactions.GetOrders().Single(), _algorithm.UtcTime, OrderFee.Zero)
+            { Status = OrderStatus.Submitted });
+            Assert.AreEqual(OrderStatus.Submitted, orderTicket.Status);
+
+            var updateRequest = new UpdateOrderRequest(DateTime.Now, orderTicket.OrderId, new UpdateOrderFields() { Quantity = 10000 });
+            var updateTicket = transactionHandler.Process(updateRequest);
+            transactionHandler.HandleOrderRequest(updateRequest);
+            Assert.AreEqual(OrderRequestStatus.Processed, updateRequest.Status);
+            Assert.IsTrue(updateRequest.Response.IsSuccess);
+
+            // filled!
+            brokerage.PublishOrderEvent(new OrderEvent(_algorithm.Transactions.GetOrders().Single(), _algorithm.UtcTime, OrderFee.Zero)
+            { Status = OrderStatus.Filled, FillQuantity = 1000, FillPrice = price });
+
+            Assert.AreEqual(1000, security.Holdings.Quantity);
+            Assert.AreEqual(price, security.Holdings.AveragePrice);
+            Assert.AreEqual(OrderStatus.Filled, orderTicket.Status);
+
+            // update failed!
+            brokerage.PublishOrderEvent(new OrderEvent(_algorithm.Transactions.GetOrders().Single(), _algorithm.UtcTime, OrderFee.Zero)
+            { Status = OrderStatus.Invalid });
+
+            // nothing should change
+            Assert.AreEqual(1000, security.Holdings.Quantity);
+            Assert.AreEqual(price, security.Holdings.AveragePrice);
+            Assert.AreEqual(OrderStatus.Filled, orderTicket.Status);
         }
 
         [Test]
@@ -1407,7 +1534,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
                 parameter.ExpectedFinalStatus,
                 setupHandler: "TestIncrementalOrderIdSetupHandler");
 
-            Assert.AreEqual(10, TestIncrementalOrderIdAlgorithm.OrderEventIds.Count);
+            Assert.AreEqual(12, TestIncrementalOrderIdAlgorithm.OrderEventIds.Count);
         }
 
         [Test]
@@ -1933,6 +2060,10 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             {
             }
             public override bool PlaceOrder(Order order)
+            {
+                return true;
+            }
+            public override bool UpdateOrder(Order order)
             {
                 return true;
             }

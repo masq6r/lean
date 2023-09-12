@@ -99,7 +99,7 @@ namespace QuantConnect.Messaging
 
             var message = new NetMQMessage();
 
-            message.Append(payload);
+            message.Append(payload, System.Text.Encoding.UTF8);
 
             _server.SendMultipartMessage(message);
         }

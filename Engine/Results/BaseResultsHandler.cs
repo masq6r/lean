@@ -942,15 +942,24 @@ namespace QuantConnect.Lean.Engine.Results
 
                 if (packetType == PacketType.Debug)
                 {
-                    Messages.Enqueue(new DebugPacket(ProjectId, AlgorithmId, CompileId, message));
+                    var msg = Algorithm != null
+                        ? Algorithm.Time.ToStringInvariant(DateFormat.UI) + " " + message
+                        : message;
+                    Messages.Enqueue(new DebugPacket(ProjectId, AlgorithmId, CompileId, msg));
                 }
                 else if (packetType == PacketType.Log)
                 {
-                    Messages.Enqueue(new LogPacket(AlgorithmId, message));
+                    var msg = Algorithm != null
+                        ? Algorithm.Time.ToStringInvariant(DateFormat.UI) + " " + message
+                        : message;
+                    Messages.Enqueue(new LogPacket(AlgorithmId, msg));
                 }
                 else if (packetType == PacketType.HandledError)
                 {
-                    Messages.Enqueue(new HandledErrorPacket(AlgorithmId, message));
+                    var msg = Algorithm != null
+                        ? Algorithm.Time.ToStringInvariant(DateFormat.UI) + " " + message
+                        : message;
+                    Messages.Enqueue(new HandledErrorPacket(AlgorithmId, msg));
                 }
                 AddToLogStore(message);
 

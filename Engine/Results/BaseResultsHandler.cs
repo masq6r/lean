@@ -402,6 +402,7 @@ namespace QuantConnect.Lean.Engine.Results
             CompileId = job.CompileId;
             AlgorithmId = job.AlgorithmId;
             ProjectId = job.ProjectId;
+            ResultsDestinationFolder = Path.Combine(ResultsDestinationFolder, job.AlgorithmId);
             RamAllocation = job.RamAllocation.ToStringInvariant();
             OrderEventJsonConverter = new OrderEventJsonConverter(AlgorithmId);
             _updateRunner = new Thread(Run, 0) { IsBackground = true, Name = "Result Thread" };
@@ -421,6 +422,10 @@ namespace QuantConnect.Lean.Engine.Results
         /// <returns>The full path, including the filename</returns>
         protected string GetResultsPath(string filename)
         {
+            if(!Directory.Exists(ResultsDestinationFolder))
+            {
+                Directory.CreateDirectory(ResultsDestinationFolder);
+            }
             return Path.Combine(ResultsDestinationFolder, filename);
         }
 

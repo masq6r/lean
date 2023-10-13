@@ -18,6 +18,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using QuantConnect.Algorithm.Framework.Alphas;
 using QuantConnect.Brokerages;
 using QuantConnect.Configuration;
 using QuantConnect.Interfaces;
@@ -199,6 +200,15 @@ namespace QuantConnect.Lean.Engine.Results
 
                 var progress = _progressMonitor.Progress;
 
+                // Get insights.
+                var insights =
+                    Algorithm.Insights is null
+                    ? new List<Insight>()
+                    : Algorithm.Insights.GetInsights()
+                        .OrderBy(insight => insight.GeneratedTimeUtc)
+                        .Take(500)
+                        .ToList();
+
                 //1. Cloud Upload -> Upload the whole packet to S3  Immediately:
                 if (utcNow > _nextS3Update)
                 {
@@ -229,6 +239,10 @@ namespace QuantConnect.Lean.Engine.Results
                 {
                     MessagingHandler.Send(backtestingPacket);
                 }
+
+                //3. Send insights.
+                var alphaPacket = new AlphaResultPacket(Algorithm.AlgorithmId, _job.UserId, insights);
+                MessagingHandler.Send(alphaPacket);
 
                 // let's re update this value after we finish just in case, so we don't re enter in the next loop
                 _nextUpdate = DateTime.UtcNow.Add(MainUpdateInterval);
@@ -374,6 +388,16 @@ namespace QuantConnect.Lean.Engine.Results
                 result.Results.ServerStatistics = GetServerStatistics(endTime);
                 //Second, send the truncated packet:
                 MessagingHandler.Send(result);
+
+                // Send the complete list of Insights.
+                var insights =
+                    Algorithm.Insights is null
+                    ? new List<Insight>()
+                    : Algorithm.Insights.GetInsights()
+                        .OrderBy(insight => insight.GeneratedTimeUtc)
+                        .ToList();
+                var alphaPacket = new AlphaResultPacket(Algorithm.AlgorithmId, _job.UserId, insights);
+                MessagingHandler.Send(alphaPacket);
 
                 Log.Trace("BacktestingResultHandler.SendAnalysisResult(): Processed final packet");
             }

@@ -16,6 +16,8 @@
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
+using System.Globalization;
+using System.Linq;
 
 namespace QuantConnect.Optimizer.Objectives
 {
@@ -57,6 +59,36 @@ namespace QuantConnect.Optimizer.Objectives
             return Messages.Target.ToString(this);
         }
 
+        private decimal ToDecimal(string str)
+        {
+            var trimmed = str.Trim();
+            var value = str.TrimEnd('%').ToDecimal();
+            if (trimmed.EndsWith("%"))
+            {
+                value /= 100;
+            } else
+            {
+                var pattern = String.Join("", Currencies.CurrencySymbols.Values);
+                var rg = new System.Text.RegularExpressions.Regex($"[{pattern}]");
+                var m = rg.Match(trimmed);
+                if (m.Success)
+                {
+                    var currencySymbol = m.Value;
+                    var nfi = new System.Globalization.NumberFormatInfo();
+                    nfi.NegativeSign = "-";
+                    nfi.CurrencyDecimalSeparator = ".";
+                    nfi.CurrencyGroupSeparator = ",";
+                    nfi.CurrencySymbol = currencySymbol;
+                    value = Decimal.Parse(str, System.Globalization.NumberStyles.Currency, nfi);
+                } else
+                {
+                    value = trimmed.ToDecimal();
+                }
+            }
+
+            return value;
+        }
+
         /// <summary>
         /// Check backtest result
         /// </summary>
@@ -74,7 +106,7 @@ namespace QuantConnect.Optimizer.Objectives
             {
                 return false;
             }
-            var computedValue = token.Value<string>().ToNormalizedDecimal();
+            var computedValue = ToDecimal(token.Value<string>());
             if (!Current.HasValue || Extremum.Better(Current.Value, computedValue))
             {
                 Current = computedValue;

@@ -75,7 +75,7 @@ namespace QuantConnect.Optimizer
         /// <summary>
         /// The optimization strategy being used
         /// </summary>
-        protected readonly IOptimizationStrategy Strategy;
+        public readonly IOptimizationStrategy Strategy;
 
         /// <summary>
         /// The optimization packet
@@ -209,7 +209,7 @@ namespace QuantConnect.Optimizer
         /// </summary>
         /// <param name="jsonBacktestResult">The backtest json result</param>
         /// <param name="backtestId">The associated backtest id</param>
-        protected virtual void NewResult(string jsonBacktestResult, string backtestId)
+        public virtual void NewResult(string jsonBacktestResult, string backtestId)
         {
             lock (RunningParameterSetForBacktest)
             {
@@ -277,7 +277,7 @@ namespace QuantConnect.Optimizer
         /// <summary>
         /// Returns the current optimization status and strategy estimates
         /// </summary>
-        public int GetCurrentEstimate()
+        public virtual int GetCurrentEstimate()
         {
             return Strategy.GetTotalBacktestEstimate();
         }

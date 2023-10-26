@@ -149,12 +149,12 @@ namespace QuantConnect.Optimizer.Strategies
         /// Handles new parameter set
         /// </summary>
         /// <param name="parameterSet">New parameter set</param>
-        protected virtual void OnNewParameterSet(ParameterSet parameterSet)
+        public virtual void OnNewParameterSet(ParameterSet parameterSet)
         {
             NewParameterSet?.Invoke(this, parameterSet);
         }
 
-        protected virtual void ProcessNewResult(OptimizationResult result)
+        public virtual void ProcessNewResult(OptimizationResult result)
         {
             // check if the incoming result is not the initial seed
             if (result.Id > 0)

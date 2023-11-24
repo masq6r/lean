@@ -380,7 +380,11 @@ namespace QuantConnect.Lean.Engine.Results
                 result.DateFinished = DateTime.Now;
                 result.Progress = 1;
 
-                StoreInsights();
+                var shouldStoreInsights = Config.GetBool("store-insights", true);
+                if(shouldStoreInsights)
+                {
+                    StoreInsights();
+                }
 
                 //Place result into storage.
                 StoreResult(result);
@@ -390,14 +394,17 @@ namespace QuantConnect.Lean.Engine.Results
                 MessagingHandler.Send(result);
 
                 // Send the complete list of Insights.
-                var insights =
-                    Algorithm.Insights is null
-                    ? new List<Insight>()
-                    : Algorithm.Insights.GetInsights()
-                        .OrderBy(insight => insight.GeneratedTimeUtc)
-                        .ToList();
-                var alphaPacket = new AlphaResultPacket(Algorithm.AlgorithmId, _job.UserId, insights);
-                MessagingHandler.Send(alphaPacket);
+                if(shouldStoreInsights)
+                {
+                    var insights =
+                        Algorithm.Insights is null
+                        ? new List<Insight>()
+                        : Algorithm.Insights.GetInsights()
+                            .OrderBy(insight => insight.GeneratedTimeUtc)
+                            .ToList();
+                    var alphaPacket = new AlphaResultPacket(Algorithm.AlgorithmId, _job.UserId, insights);
+                    MessagingHandler.Send(alphaPacket);
+                }
 
                 Log.Trace("BacktestingResultHandler.SendAnalysisResult(): Processed final packet");
             }

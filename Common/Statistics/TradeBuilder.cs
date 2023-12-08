@@ -292,6 +292,7 @@ namespace QuantConnect.Statistics
 
                         var newTrade = new Trade
                         {
+                            Id = Guid.NewGuid(),
                             Symbol = trade.Symbol,
                             EntryTime = trade.EntryTime,
                             EntryPrice = trade.EntryPrice,
@@ -404,6 +405,7 @@ namespace QuantConnect.Statistics
                     var direction = Math.Sign(fill.FillQuantity) < 0 ? TradeDirection.Long : TradeDirection.Short;
                     var trade = new Trade
                     {
+                        Id = Guid.NewGuid(),
                         Symbol = fill.Symbol,
                         EntryTime = entryTime,
                         EntryPrice = entryAveragePrice,
@@ -503,6 +505,7 @@ namespace QuantConnect.Statistics
                 var direction = totalExecutedQuantity < 0 ? TradeDirection.Long : TradeDirection.Short;
                 var trade = new Trade
                 {
+                    Id = Guid.NewGuid(),
                     Symbol = fill.Symbol,
                     EntryTime = entryTime,
                     EntryPrice = entryPrice,

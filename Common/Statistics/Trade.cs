@@ -25,6 +25,11 @@ namespace QuantConnect.Statistics
         /// <summary>
         /// The symbol of the traded instrument
         /// </summary>
+        public Guid Id { get; set; }
+
+        /// <summary>
+        /// The symbol of the traded instrument
+        /// </summary>
         public Symbol Symbol { get; set; }
 
         /// <summary>
